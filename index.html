@@ -11,25 +11,13 @@
     font-weight:300 800; font-style:normal; font-display:swap;
   }
 
+  /* Brand-locked palette: this stays cream/gold regardless of the visitor's OS theme —
+     the palette itself is the brand, not something that should flip to inDrive-style dark. */
   :root{
     --bg:#F4EFE4; --bg-alt:#EFE8D8; --bg-card:#FBF8F1;
     --gold:#E3B24C; --gold-deep:#B4842A; --gold-ink:#2A1B04;
     --ink:#241E12; --muted:#8C8168; --dim:#A69C82; --line:#E4DAC1;
     --shadow:0 20px 44px rgba(70,50,10,0.14);
-  }
-  :root[data-theme="dark"]{
-    --bg:#14110A; --bg-alt:#1A160D; --bg-card:#1F1A11;
-    --gold:#E7B94F; --gold-deep:#C89638; --gold-ink:#1B1204;
-    --ink:#F3EEE1; --muted:#B5A98C; --dim:#7C7460; --line:#33291A;
-    --shadow:0 20px 44px rgba(0,0,0,0.45);
-  }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --bg:#14110A; --bg-alt:#1A160D; --bg-card:#1F1A11;
-      --gold:#E7B94F; --gold-deep:#C89638; --gold-ink:#1B1204;
-      --ink:#F3EEE1; --muted:#B5A98C; --dim:#7C7460; --line:#33291A;
-      --shadow:0 20px 44px rgba(0,0,0,0.45);
-    }
   }
   *{ box-sizing:border-box; }
   html{ scroll-behavior:smooth; }
