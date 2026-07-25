@@ -61,6 +61,29 @@
   .btn.ghost{ background:transparent; border:1.5px solid var(--line); color:var(--ink); }
   .btn-row{ display:flex; gap:12px; flex-wrap:wrap; }
 
+  /* ---------------- MEGA HERO (inDrive-scale opener) ---------------- */
+  .mega-hero{
+    min-height:92vh; display:flex; align-items:center; border-bottom:1px solid var(--line);
+    position:relative; overflow:hidden; padding:140px 0 70px;
+  }
+  .mega-hero::before{
+    content:""; position:absolute; inset:-15% -10% auto -10%; height:640px; pointer-events:none;
+    background:radial-gradient(circle at 26% 24%, color-mix(in srgb, var(--gold) 20%, transparent), transparent 62%);
+  }
+  .mega-hero .wrap{ display:grid; grid-template-columns:1.15fr .85fr; gap:70px; align-items:center; position:relative; z-index:1; }
+  @media (max-width:940px){ .mega-hero .wrap{ grid-template-columns:1fr; } .mega-hero{ min-height:auto; padding:96px 0 60px; } }
+  .mega-hero h1{
+    font-weight:800; font-size:clamp(40px,7vw,84px); line-height:0.98; letter-spacing:-0.025em;
+    margin:18px 0 22px; text-wrap:balance;
+  }
+  .mega-hero .accent{ color:var(--gold); }
+  .mega-hero p{ font-size:18px; line-height:1.65; color:var(--muted); max-width:480px; margin:0 0 34px; }
+  .hero-stats{ display:flex; gap:30px; flex-wrap:wrap; margin-top:38px; }
+  .hero-stats div{ font-size:12.5px; font-weight:700; color:var(--muted); }
+  .hero-stats b{ font-size:17px; font-weight:800; color:var(--ink); display:block; }
+  .mega-visual{ transform:scale(1.04); }
+  @media (max-width:940px){ .mega-visual{ transform:none; } }
+
   /* hero visual: negotiation mock card */
   .visual-card{ background:var(--bg-card); border:1px solid var(--line); border-radius:26px; padding:24px; position:relative; box-shadow:var(--shadow); }
   .vc-map{ position:relative; height:190px; border-radius:18px; overflow:hidden; background:linear-gradient(160deg,var(--bg-alt),var(--line)); margin-bottom:18px; }
@@ -75,12 +98,6 @@
   .fare-row .l{ font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
   .fare-row .v{ font-size:19px; font-weight:800; font-variant-numeric:tabular-nums; }
   .fare-status{ font-size:12px; font-weight:700; color:var(--gold); text-align:center; margin-top:12px; min-height:16px; }
-
-  .delivery-visual{ display:flex; flex-direction:column; gap:12px; }
-  .parcel-card{ display:flex; align-items:center; gap:12px; background:var(--bg-card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; box-shadow:var(--shadow); }
-  .parcel-card .ic{ font-size:20px; }
-  .parcel-card .t{ font-size:13px; font-weight:700; }
-  .parcel-card .s{ font-size:11px; color:var(--muted); }
 
   .dispatch-visual .step-row{ display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--line); }
   .dispatch-visual .step-row:last-child{ border-bottom:none; }
@@ -166,7 +183,7 @@
     <div class="wordmark">Pick<em>&amp;</em>Drive</div>
     <div class="nav-links">
       <a href="#rides">City Ride</a>
-      <a href="#delivery">Delivery</a>
+      <a href="#rides">Delivery</a>
       <a href="#earn">Drive &amp; Earn</a>
       <a href="#safety">Safety</a>
       <a href="#cities">Cities</a>
@@ -178,20 +195,25 @@
   </div>
 </nav>
 
-<!-- HERO 1: Rider / fare negotiation -->
-<header class="stack-hero">
+<!-- MEGA HERO: Rider / fare negotiation -->
+<header class="mega-hero">
   <div class="wrap">
     <div class="reveal in">
-      <div class="eyebrow">For Riders</div>
+      <div class="eyebrow">For Riders, Across Pakistan</div>
       <h1>Fair fares, decided by <span class="accent">you.</span></h1>
       <p>See the real calculated fare first — never inflated. Offer less if you want, and let nearby drivers accept, decline, or counter. No pressure, no black box.</p>
       <div class="btn-row">
         <a class="btn primary" href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Try the Live Demo</a>
         <a class="btn ghost" href="#rides">See Ride Options</a>
       </div>
+      <div class="hero-stats">
+        <div><b>6</b> Ride Categories</div>
+        <div><b>100%</b> Fares Shown Upfront</div>
+        <div><b>0</b> Surprise Assignments</div>
+      </div>
     </div>
     <div class="reveal in">
-      <div class="visual-card">
+      <div class="visual-card mega-visual">
         <div class="vc-map">
           <svg viewBox="0 0 380 190" preserveAspectRatio="none">
             <path class="vc-road" d="M-10 120 C 100 120, 120 50, 390 60"/>
@@ -210,27 +232,6 @@
     </div>
   </div>
 </header>
-
-<!-- HERO 2: Delivery -->
-<section class="stack-hero" style="background:var(--bg-alt);">
-  <div class="wrap">
-    <div class="reveal">
-      <div class="delivery-visual">
-        <div class="parcel-card"><span class="ic">🏍</span><div><div class="t">Bike Delivery</div><div class="s">Same-day parcels &amp; documents</div></div></div>
-        <div class="parcel-card"><span class="ic">🛺</span><div><div class="t">Rikshaw Delivery</div><div class="s">Bigger loads, still same-day</div></div></div>
-        <div class="parcel-card"><span class="ic">🏫</span><div><div class="t">School Transport</div><div class="s">Recurring rides, verified drivers</div></div></div>
-      </div>
-    </div>
-    <div class="reveal">
-      <div class="eyebrow">Fair Delivery</div>
-      <h2 id="delivery">Same-day delivery, done <span class="accent">fair.</span></h2>
-      <p>From a parcel across town to the daily school run — every delivery category is priced the same transparent way as a ride, and dispatched by the same careful review.</p>
-      <div class="btn-row">
-        <a class="btn primary" href="#rides">Check Categories</a>
-      </div>
-    </div>
-  </div>
-</section>
 
 <!-- HERO 3: Manual dispatch trust -->
 <section class="stack-hero">
@@ -271,7 +272,7 @@
         <div class="ic">🏍</div>
         <h3>Bike &amp; Rikshaw Delivery</h3>
         <p>Parcels, documents and bigger loads, dispatched with the same fare transparency as a ride.</p>
-        <div class="service-links"><a href="#delivery">Deliver →</a><a href="#earn">Drive →</a></div>
+        <div class="service-links"><a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Deliver →</a><a href="#earn">Drive →</a></div>
       </div>
       <div class="service-card">
         <div class="ic">🚐</div>
@@ -345,7 +346,7 @@
       </div>
       <div class="footer-col"><h4>Ride</h4><ul>
         <li><a href="#rides">City Ride</a></li>
-        <li><a href="#delivery">Delivery</a></li>
+        <li><a href="#rides">Delivery</a></li>
         <li><a href="#rides">School Transport</a></li>
       </ul></div>
       <div class="footer-col"><h4>Drive &amp; Earn</h4><ul>
