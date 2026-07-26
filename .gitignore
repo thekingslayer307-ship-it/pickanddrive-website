@@ -1,0 +1,6 @@
+.vercel
+
+# Raw/source illustration exports (large) — optimized web versions live in assets/*.webp
+assets/service-illustrations/
+"src/codex generated graphics/"
+
