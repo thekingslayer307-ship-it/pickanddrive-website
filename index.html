@@ -115,24 +115,53 @@
   .reveal{ opacity:0; transform:translateY(24px); transition:opacity .6s cubic-bezier(.22,.68,.35,1.01), transform .6s cubic-bezier(.22,.68,.35,1.01); }
   .reveal.in{ opacity:1; transform:translateY(0); }
 
-  /* ---------------- SERVICE CARDS ---------------- */
-  .service-grid{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-  @media (max-width:820px){ .service-grid{ grid-template-columns:1fr; } }
-  .service-card{
-    background:var(--bg-card); border-radius:28px; padding:30px 28px; box-shadow:var(--shadow);
-    display:flex; align-items:center; gap:24px; transition:transform .2s ease;
-  }
-  .service-card:hover{ transform:translateY(-4px); }
-  @media (max-width:560px){ .service-card{ flex-direction:column; align-items:flex-start; } }
-
-  .svc-art{ position:relative; width:168px; height:150px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; }
-  .svc-art img{ width:100%; height:100%; object-fit:contain; }
-
-  .svc-body h3{ font-family:"Plus Jakarta Sans", sans-serif; font-size:24px; font-weight:800; letter-spacing:-0.01em; margin:0 0 8px; line-height:1.05; }
-  .svc-body p{ font-size:13px; color:var(--muted); line-height:1.5; margin:0 0 16px; max-width:240px; }
-  .service-links{ display:flex; flex-direction:column; gap:9px; }
-  .service-links a{ font-size:14px; font-weight:800; color:var(--ink); display:inline-flex; align-items:center; gap:4px; }
-  .service-links a:hover{ color:var(--gold-deep); }
+  /* ---------------- MOBILITY MAP ---------------- */
+  .rides-shell{ position:relative; }
+  .rides-shell::before{ content:""; position:absolute; inset:-38px -54px auto auto; width:180px; height:180px; border:1px solid var(--line); border-radius:50%; opacity:.7; pointer-events:none; }
+  .rides-shell::after{ content:""; position:absolute; top:-7px; right:72px; width:8px; height:8px; border-radius:50%; background:var(--gold); box-shadow:0 0 0 8px rgba(227,178,76,.16); pointer-events:none; }
+  .service-grid{ display:grid; grid-template-columns:minmax(0,1.16fr) minmax(340px,.84fr); grid-template-rows:repeat(2,minmax(280px,auto)); gap:18px; position:relative; z-index:1; }
+  .service-card{ position:relative; isolation:isolate; overflow:hidden; min-height:280px; border:1px solid rgba(180,132,42,.2); border-radius:32px; box-shadow:0 22px 55px rgba(42,27,4,.09); transition:transform .35s cubic-bezier(.22,.68,.35,1.01),box-shadow .35s ease; }
+  .service-card:hover{ transform:translateY(-6px); box-shadow:0 30px 70px rgba(42,27,4,.14); }
+  .service-card.city{ grid-row:1 / span 2; min-height:578px; background:var(--gold); }
+  .service-card.delivery{ background:var(--ink); color:var(--bg-card); }
+  .service-card.intercity{ background:var(--bg-card); }
+  .service-card::before{ content:""; position:absolute; z-index:-1; width:260px; height:260px; border-radius:50%; border:1px solid currentColor; opacity:.12; }
+  .service-card.city::before{ right:-92px; top:-80px; box-shadow:0 0 0 32px rgba(255,255,255,.12),0 0 0 64px rgba(255,255,255,.08); }
+  .service-card.delivery::before{ left:-120px; bottom:-165px; box-shadow:0 0 0 34px rgba(227,178,76,.12); }
+  .service-card.intercity::before{ right:-130px; top:-150px; box-shadow:0 0 0 36px rgba(227,178,76,.13); }
+  .svc-number{ position:absolute; top:24px; left:26px; z-index:3; display:flex; align-items:center; gap:9px; font-size:10px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; }
+  .svc-number::before{ content:""; width:26px; height:1px; background:currentColor; opacity:.5; }
+  .service-card.city .svc-number{ color:var(--gold-ink); }
+  .service-card.delivery .svc-number{ color:var(--gold); }
+  .service-card.intercity .svc-number{ color:var(--gold-deep); }
+  .service-card.city .svc-art{ position:absolute; inset:70px -8% 142px 2%; display:flex; align-items:center; justify-content:center; }
+  .service-card.city .svc-art img{ width:115%; height:115%; object-fit:contain; filter:drop-shadow(0 18px 20px rgba(42,27,4,.15)); transition:transform .45s cubic-bezier(.22,.68,.35,1.01); }
+  .service-card.city:hover .svc-art img{ transform:scale(1.025) rotate(-1deg); }
+  .service-card.city .svc-body{ position:absolute; z-index:2; left:32px; right:32px; bottom:30px; display:grid; grid-template-columns:1fr auto; align-items:end; gap:22px; }
+  .svc-kicker{ display:block; margin-bottom:9px; font-size:10px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; opacity:.68; }
+  .svc-body h3{ font-family:"Plus Jakarta Sans",sans-serif; font-size:clamp(25px,2.6vw,38px); font-weight:800; letter-spacing:-.035em; margin:0 0 8px; line-height:1; }
+  .svc-body p{ font-size:13px; line-height:1.55; margin:0; max-width:330px; }
+  .service-card.city .svc-body p{ color:rgba(42,27,4,.72); }
+  .service-card:not(.city){ display:grid; grid-template-columns:minmax(145px,.85fr) 1.15fr; align-items:end; padding:58px 28px 28px 18px; }
+  .service-card:not(.city) .svc-art{ align-self:stretch; display:flex; align-items:center; justify-content:center; min-width:0; }
+  .service-card:not(.city) .svc-art img{ width:135%; max-width:none; height:220px; object-fit:contain; filter:drop-shadow(0 14px 16px rgba(0,0,0,.14)); transition:transform .4s cubic-bezier(.22,.68,.35,1.01); }
+  .service-card:not(.city):hover .svc-art img{ transform:translateY(-5px) scale(1.03); }
+  .service-card:not(.city) .svc-body{ position:relative; z-index:2; padding-left:10px; }
+  .service-card:not(.city) .svc-body h3{ font-size:27px; }
+  .service-card.delivery .svc-body p{ color:rgba(251,248,241,.66); }
+  .service-card.intercity .svc-body p{ color:var(--muted); }
+  .service-links{ display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
+  .service-links a{ min-height:38px; padding:10px 14px; border-radius:999px; font-size:11px; font-weight:800; line-height:1; display:inline-flex; align-items:center; gap:8px; border:1px solid currentColor; transition:background .2s ease,color .2s ease,transform .2s ease; }
+  .service-links a::after{ content:"\2197"; font-size:12px; }
+  .service-links a:hover{ transform:translateY(-2px); }
+  .service-card.city .service-links a{ color:var(--gold-ink); background:rgba(251,248,241,.5); border-color:rgba(42,27,4,.22); }
+  .service-card.city .service-links a:hover{ background:var(--bg-card); }
+  .service-card.delivery .service-links a{ color:var(--bg-card); border-color:rgba(251,248,241,.24); }
+  .service-card.delivery .service-links a:hover{ color:var(--gold-ink); background:var(--gold); border-color:var(--gold); }
+  .service-card.intercity .service-links a{ color:var(--ink); border-color:var(--line); background:var(--bg-alt); }
+  .service-card.intercity .service-links a:hover{ background:var(--gold); border-color:var(--gold); }
+  @media (max-width:900px){ .service-grid{ grid-template-columns:1fr; grid-template-rows:auto; } .service-card.city{ grid-row:auto; min-height:540px; } .service-card:not(.city){ min-height:300px; } }
+  @media (max-width:560px){ .rides-shell::before,.rides-shell::after{ display:none; } .service-card{ border-radius:25px; } .service-card.city{ min-height:505px; } .service-card.city .svc-art{ inset:64px -20% 178px -6%; } .service-card.city .svc-body{ left:23px; right:23px; bottom:23px; grid-template-columns:1fr; gap:17px; } .service-card:not(.city){ grid-template-columns:1fr; padding:54px 23px 23px; } .service-card:not(.city) .svc-art{ height:190px; } .service-card:not(.city) .svc-art img{ width:100%; height:230px; } .service-card:not(.city) .svc-body{ padding-left:0; } }
 
   /* ---------------- EARN / DRIVE SECTION ---------------- */
   .earn{ background:var(--bg-alt); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
@@ -268,39 +297,43 @@
       <h2>One app, every kind of trip</h2>
       <p>Six categories, one dispatch model — reviewed, fare-agreed, and tracked the same way every time.</p>
     </div>
-    <div class="service-grid reveal">
-      <div class="service-card">
-        <div class="svc-art"><img src="assets/city-rides.webp" alt="Driver and passenger smiling inside a car" loading="lazy" /></div>
-        <div class="svc-body">
-          <h3>City Ride</h3>
-          <p>Forever fair rides across town, priced by distance and time.</p>
-          <div class="service-links">
-            <a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">For Riders ›</a>
-            <a href="#earn">For Drivers ›</a>
+    <div class="rides-shell reveal">
+      <div class="service-grid">
+        <article class="service-card city">
+          <span class="svc-number">01 &middot; Everyday</span>
+          <div class="svc-art"><img src="assets/city-rides.webp" alt="Driver and passenger smiling inside a car" loading="lazy" /></div>
+          <div class="svc-body">
+            <div><span class="svc-kicker">Your city, your fare</span><h3>City Ride</h3><p>Forever fair rides across town, priced by distance and time.</p></div>
+            <div class="service-links">
+              <a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Ride now</a>
+              <a href="#earn">Drive</a>
+            </div>
           </div>
-        </div>
-      </div>
-      <div class="service-card">
-        <div class="svc-art"><img src="assets/delivery.webp" alt="Delivery rider with his bike and parcel box" loading="lazy" /></div>
-        <div class="svc-body">
-          <h3>Delivery</h3>
-          <p>Same-day parcels and documents, dispatched fair.</p>
-          <div class="service-links">
-            <a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">For Senders ›</a>
-            <a href="#earn">For Drivers ›</a>
+        </article>
+        <article class="service-card delivery">
+          <span class="svc-number">02 &middot; On demand</span>
+          <div class="svc-art"><img src="assets/delivery.webp" alt="Delivery rider with his bike and parcel box" loading="lazy" /></div>
+          <div class="svc-body">
+            <span class="svc-kicker">From here to there</span><h3>Delivery</h3>
+            <p>Same-day parcels and documents, dispatched fair.</p>
+            <div class="service-links">
+              <a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Send now</a>
+              <a href="#earn">Deliver</a>
+            </div>
           </div>
-        </div>
-      </div>
-      <div class="service-card">
-        <div class="svc-art"><img src="assets/intercity.webp" alt="Driver helping a passenger load luggage into the car" loading="lazy" /></div>
-        <div class="svc-body">
-          <h3>City to City</h3>
-          <p>Comfortable trips between cities, at a fare you agree to first.</p>
-          <div class="service-links">
-            <a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">For Travelers ›</a>
-            <a href="#earn">For Drivers ›</a>
+        </article>
+        <article class="service-card intercity">
+          <span class="svc-number">03 &middot; Go farther</span>
+          <div class="svc-art"><img src="assets/intercity.webp" alt="Driver helping a passenger load luggage into the car" loading="lazy" /></div>
+          <div class="svc-body">
+            <span class="svc-kicker">Beyond city limits</span><h3>City to City</h3>
+            <p>Comfortable trips between cities, at a fare you agree to first.</p>
+            <div class="service-links">
+              <a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Plan a trip</a>
+              <a href="#earn">Drive</a>
+            </div>
           </div>
-        </div>
+        </article>
       </div>
     </div>
   </div>
