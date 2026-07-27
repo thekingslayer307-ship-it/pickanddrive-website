@@ -2,5 +2,9 @@
 
 # Raw/source illustration exports (large) — optimized web versions live in assets/*.webp
 assets/service-illustrations/
-src/
+
+# Keep final Codex graphics deployable; ignore only large intermediate exports.
+src/**/*-source.png
+src/**/*-source.jpeg
+src/**/*-source.jpg
 
