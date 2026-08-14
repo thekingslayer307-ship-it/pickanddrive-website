@@ -128,7 +128,7 @@ async function pollTick() {
     if (state.role === 'customer') {
       const ride = await apiRequest('/rides/mine/active');
       const wasTracking = ['waiting', 'tracking'].includes(state.screen);
-      if (!ride) {
+      if (!ride || !ride.id) {
         if (state.activeRide && wasTracking) {
           state.activeRide = null; state.pickup = null; state.drop = null; state.fareEstimate = null;
           toast('Your ride was cancelled');
@@ -144,7 +144,7 @@ async function pollTick() {
     } else if (state.role === 'driver') {
       if (state.driverOnline && !state.incomingRide && (!state.activeRide || ['completed'].includes(state.activeRide.status))) {
         const ride = await apiRequest('/driver/incoming');
-        if (ride) { state.incomingRide = ride; render(); }
+        if (ride && ride.id) { state.incomingRide = ride; render(); }
       }
     }
   } catch (e) { /* silent on poll errors */ }
@@ -389,7 +389,7 @@ function rideStatusSteps(status) {
 }
 function scWaiting() {
   const ride = state.activeRide;
-  if (!ride) return `<div class="p-pad"><div class="spacer"></div><div class="spin" style="margin:0 auto"></div><div class="spacer"></div></div>`;
+  if (!ride || !ride.id) return `<div class="p-pad"><div class="spacer"></div><div class="spin" style="margin:0 auto"></div><div class="spacer"></div></div>`;
   return `<div class="p-pad" style="align-items:center;text-align:center;gap:14px">
     <div class="spacer"></div>
     <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold-deep));display:flex;align-items:center;justify-content:center;font-size:24px">🚦</div>
@@ -402,7 +402,7 @@ function scWaiting() {
 }
 function scTracking() {
   const ride = state.activeRide;
-  if (!ride) return scWaiting();
+  if (!ride || !ride.id) return scWaiting();
   const driver = ride.driver || {};
   return `<div class="p-pad" style="gap:12px">
     <div class="back" onclick="goto('waiting')">Trip status</div>
