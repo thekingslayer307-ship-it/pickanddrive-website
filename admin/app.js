@@ -1,48 +1,22 @@
-/* Pick&Drive Admin Console — standalone back-office web app.
-   Currently backed by localStorage demo data. Swap AdminApi's methods for
-   real fetch() calls once the Laravel backend exists — every screen below
-   only reads/writes through AdminApi, so that's the one place to change. */
+/* Pick&Drive Admin Console — standalone back-office web app, talking to the
+   real Laravel API on the VPS. Every screen only reads/writes through AdminApi. */
 
+const API_BASE = 'https://api.pickanddrive.pk/api/v1';
+const GOOGLE_CLIENT_ID = ''; // TODO: fill in once a Google Cloud OAuth client exists
 const KEY = 'pickanddrive-admin-v1';
 
 function seedState() {
   return {
     loggedIn: false,
-    adminName: 'Dispatch Admin',
+    adminName: '',
+    token: null,
     tab: 'dispatch',
-    commissionRate: 0.15,
-    totalCommissionCollected: 48250,
-    surge: 1,
-    pendingRide: {
-      id: 'ride-8841',
-      fare: 600,
-      rider: 'Maya Ahmed',
-      riderRating: 4.96,
-      pickup: 'Gulberg III, Lahore',
-      drop: 'DHA Phase 5, Lahore',
-      distanceKm: 8.4,
-      status: 'pending_dispatch', // pending_dispatch | dispatched | none
-      assignedDriverId: null,
-    },
-    drivers: [
-      { id: 'aisha', name: 'Aisha Khan', rating: 4.98, trips: 1240, vehicle: 'Honda City 2024', plate: 'LEB 829', photo: 'https://i.pravatar.cc/100?img=47', online: true, acceptance: 92, cancellation: 3, strikes: 0 },
-      { id: 'amir', name: 'Amir Raza', rating: 4.91, trips: 860, vehicle: 'Toyota Corolla', plate: 'LEA-2210', photo: 'https://i.pravatar.cc/100?img=12', online: true, acceptance: 89, cancellation: 4, strikes: 0 },
-      { id: 'sameer', name: 'Sameer Khan', rating: 4.95, trips: 1510, vehicle: 'Honda Civic', plate: 'LEC-7741', photo: 'https://i.pravatar.cc/100?img=33', online: false, acceptance: 95, cancellation: 2, strikes: 1 },
-    ],
-    customers: [
-      { key: 'maya-ahmed', name: 'Maya Ahmed', rides: 8, rating: 4.96, blocked: false },
-      { key: 'hamza-k', name: 'Hamza K.', rides: 22, rating: 4.7, blocked: false },
-      { key: 'sana-r', name: 'Sana R.', rides: 3, rating: 3.9, blocked: true },
-    ],
-    coupons: [
-      { code: 'LAHORE25', discount: 25, type: 'percent', active: true },
-      { code: 'AIRPORT100', discount: 100, type: 'flat', active: true },
-      { code: 'WELCOME50', discount: 50, type: 'flat', active: false },
-    ],
-    announcements: [
-      { title: 'Eid week fare adjustment', body: 'Surge caps raised to 1.8x for Eid week, effective immediately.', time: '2 days ago' },
-      { title: 'New driver documents policy', body: 'CNIC and license re-verification required every 12 months.', time: '1 week ago' },
-    ],
+    dispatch: { pending: [], dispatched: [] },
+    drivers: [],
+    customers: [],
+    coupons: [],
+    announcements: [],
+    settings: { commission_rate: 0.15, surge_multiplier: 1, total_commission_collected: 0 },
   };
 }
 
@@ -56,66 +30,113 @@ const notify = (msg) => {
   notify._t = setTimeout(() => t.classList.remove('show'), 2400);
 };
 
-/* ---- Data layer: the only place that should change when a real backend exists ---- */
+/* ---- Data layer: every network call to the real backend lives here ---- */
+async function apiRequest(path, { method = 'GET', body } = {}) {
+  const res = await fetch(API_BASE + path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) {
+    state.loggedIn = false;
+    state.token = null;
+    save();
+    render();
+    throw new Error('Session expired — please sign in again');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
+  return data;
+}
+
 const AdminApi = {
-  login(email, password) {
-    // TODO: replace with POST /api/v1/admin/auth/login
-    return Promise.resolve({ ok: true, name: 'Dispatch Admin' });
+  async loginPassword(email, password) {
+    const data = await apiRequest('/auth/admin/login', { method: 'POST', body: { email, password } });
+    return { token: data.token, name: data.user.name };
   },
-  assignDriver(driverId) {
-    // TODO: replace with POST /api/v1/admin/rides/:id/assign
-    const d = state.drivers.find((x) => x.id === driverId);
-    if (!d) return;
-    state.pendingRide.status = 'dispatched';
-    state.pendingRide.assignedDriverId = driverId;
+  async loginGoogle(idToken) {
+    const data = await apiRequest('/auth/google', { method: 'POST', body: { id_token: idToken } });
+    return { token: data.token, name: data.user.name };
+  },
+  async refreshAll() {
+    const [queue, drivers, customers, coupons, announcements, settings] = await Promise.all([
+      apiRequest('/admin/dispatch/queue'),
+      apiRequest('/admin/drivers'),
+      apiRequest('/admin/customers'),
+      apiRequest('/admin/coupons'),
+      apiRequest('/admin/announcements'),
+      apiRequest('/admin/settings'),
+    ]);
+    state.dispatch = queue;
+    state.drivers = drivers;
+    state.customers = customers;
+    state.coupons = coupons;
+    state.announcements = announcements;
+    state.settings = settings;
     save();
   },
-  reassign() {
-    state.pendingRide.status = 'pending_dispatch';
-    state.pendingRide.assignedDriverId = null;
-    save();
+  async assignDriver(rideId, driverId) {
+    await apiRequest(`/admin/rides/${rideId}/assign`, { method: 'POST', body: { driver_id: driverId } });
+    await AdminApi.refreshAll();
   },
-  cancelRide() {
-    state.pendingRide.status = 'none';
-    save();
+  async reassign(rideId) {
+    await apiRequest(`/admin/rides/${rideId}/reassign`, { method: 'POST' });
+    await AdminApi.refreshAll();
   },
-  toggleDriverOnline(id) {
+  async cancelRide(rideId) {
+    await apiRequest(`/admin/rides/${rideId}/cancel`, { method: 'POST' });
+    await AdminApi.refreshAll();
+  },
+  async toggleDriverOnline(id) {
     const d = state.drivers.find((x) => x.id === id);
-    if (d) { d.online = !d.online; save(); }
+    const online = !(d && d.driver_profile && d.driver_profile.online);
+    // Admin can't directly flip a driver's own toggle server-side (that's the driver's own action);
+    // this stays a no-op call placeholder until a real "force offline" admin endpoint is added.
+    notify('Drivers control their own online status — this view is read-only for now');
   },
-  issuePenalty(id) {
-    const d = state.drivers.find((x) => x.id === id);
-    if (d) { d.strikes += 1; save(); }
+  async issuePenalty(id) {
+    await apiRequest(`/admin/drivers/${id}/penalty`, { method: 'POST', body: { reason: 'Penalty issued from admin console' } });
+    await AdminApi.refreshAll();
   },
-  toggleBlacklist(key) {
-    const c = state.customers.find((x) => x.key === key);
-    if (c) { c.blocked = !c.blocked; save(); }
+  async toggleBlacklist(key, blocked) {
+    await apiRequest(`/admin/customers/${key}/${blocked ? 'unblock' : 'block'}`, { method: 'POST' });
+    await AdminApi.refreshAll();
   },
-  toggleCoupon(code) {
+  async toggleCoupon(code) {
     const c = state.coupons.find((x) => x.code === code);
-    if (c) { c.active = !c.active; save(); }
+    if (!c) return;
+    await apiRequest(`/admin/coupons/${c.id}/toggle`, { method: 'POST' });
+    await AdminApi.refreshAll();
   },
-  createCoupon(code, discount, type) {
+  async createCoupon(code, discount, type) {
     if (state.coupons.some((c) => c.code === code)) return false;
-    state.coupons.unshift({ code, discount, type, active: true });
-    save();
+    await apiRequest('/admin/coupons', { method: 'POST', body: { code, discount, type } });
+    await AdminApi.refreshAll();
     return true;
   },
-  deleteCoupon(code) {
-    state.coupons = state.coupons.filter((c) => c.code !== code);
-    save();
+  async deleteCoupon(code) {
+    const c = state.coupons.find((x) => x.code === code);
+    if (!c) return;
+    await apiRequest(`/admin/coupons/${c.id}`, { method: 'DELETE' });
+    await AdminApi.refreshAll();
   },
-  broadcastAnnouncement(title, body) {
-    state.announcements.unshift({ title, body, time: 'Just now' });
-    save();
+  async broadcastAnnouncement(title, body) {
+    await apiRequest('/admin/announcements', { method: 'POST', body: { title, body } });
+    await AdminApi.refreshAll();
   },
-  setCommission(delta) {
-    state.commissionRate = Math.max(0, Math.min(0.4, +(state.commissionRate + delta).toFixed(2)));
-    save();
+  async setCommission(delta) {
+    const next = Math.max(0, Math.min(0.4, +(state.settings.commission_rate + delta).toFixed(2)));
+    await apiRequest('/admin/settings', { method: 'PATCH', body: { commission_rate: next } });
+    await AdminApi.refreshAll();
   },
-  setSurge(delta) {
-    state.surge = Math.max(1, Math.min(2.5, +(state.surge + delta).toFixed(1)));
-    save();
+  async setSurge(delta) {
+    const next = Math.max(1, Math.min(2.5, +(state.settings.surge_multiplier + delta).toFixed(1)));
+    await apiRequest('/admin/settings', { method: 'PATCH', body: { surge_multiplier: next } });
+    await AdminApi.refreshAll();
   },
 };
 
@@ -140,27 +161,70 @@ function authScreen() {
     <h1>Admin Console</h1>
     <p class="sub">Sign in to manage dispatch, drivers, coupons and commission.</p>
     <div class="field"><label>ADMIN EMAIL</label><input id="loginEmail" value="dispatch@pickanddrive.pk"></div>
-    <div class="field"><label>PASSWORD</label><input id="loginPassword" type="password" value="admin1234"></div>
+    <div class="field"><label>PASSWORD</label><input id="loginPassword" type="password"></div>
     <button class="btn-primary" onclick="doLogin()">Sign in</button>
-    <p class="auth-note">Demo login — connects to AdminApi.login(), ready to wire to the real backend.</p>
+    ${GOOGLE_CLIENT_ID ? '<div id="googleBtn" style="margin-top:14px;display:flex;justify-content:center"></div>' : ''}
+    <p class="auth-note">Connected to the live Pick&amp;Drive API.</p>
   </div></div>`;
 }
 async function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value.trim();
   if (!email || !password) return notify('Enter an email and password');
-  const res = await AdminApi.login(email, password);
-  if (res.ok) {
-    state.loggedIn = true;
-    state.adminName = res.name;
-    save();
-    render();
+  try {
+    const res = await AdminApi.loginPassword(email, password);
+    await finishLogin(res);
+  } catch (e) {
+    notify(e.message);
   }
+}
+async function handleGoogleCredential(response) {
+  try {
+    const res = await AdminApi.loginGoogle(response.credential);
+    await finishLogin(res);
+  } catch (e) {
+    notify(e.message);
+  }
+}
+async function finishLogin(res) {
+  state.loggedIn = true;
+  state.token = res.token;
+  state.adminName = res.name;
+  save();
+  try {
+    await AdminApi.refreshAll();
+  } catch (e) {
+    notify(e.message);
+  }
+  render();
+  startPolling();
 }
 function doLogout() {
   state.loggedIn = false;
+  state.token = null;
   save();
+  stopPolling();
   render();
+}
+if (GOOGLE_CLIENT_ID && window.google) {
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential });
+}
+function mountGoogleButton() {
+  if (GOOGLE_CLIENT_ID && window.google && document.getElementById('googleBtn')) {
+    google.accounts.id.renderButton(document.getElementById('googleBtn'), { theme: 'outline', size: 'large', width: 320 });
+  }
+}
+
+let pollTimer = null;
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(() => {
+    if (state.loggedIn) apiRequest('/admin/dispatch/queue').then((q) => { state.dispatch = q; save(); if (state.tab === 'dispatch') render(); }).catch(() => {});
+  }, 8000);
+}
+function stopPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
 }
 
 /* ---- App shell ---- */
@@ -175,7 +239,7 @@ const TABS = [
 function setTab(tab) { state.tab = tab; save(); render(); }
 
 function shell() {
-  const hasPending = state.pendingRide.status !== 'none';
+  const hasPending = state.dispatch.pending.length > 0;
   return `<div class="shell">
     <aside class="sidebar">
       <div class="brand-row"><img src="assets/app-icon.svg" alt=""><div><b>Pick&amp;Drive</b><small>ADMIN CONSOLE</small></div></div>
@@ -194,7 +258,7 @@ function shell() {
 function topbar() {
   const titles = { dispatch: ['Dispatch queue', 'Assign drivers to incoming ride requests'], drivers: ['Drivers', 'Monitor performance and manage penalties'], customers: ['Customers', 'Manage rider accounts and the blacklist'], coupons: ['Coupons', 'Create and manage promo codes'], announcements: ['Announcements', 'Broadcast messages to every rider and driver'], commission: ['Commission & surge', 'Platform fee and demand pricing controls'] };
   const [title, sub] = titles[state.tab] || ['', ''];
-  return `<div class="topbar"><div><h1>${title}</h1><p>${sub}</p></div><div class="topbar-actions"><span class="pill-btn">PKR ${state.totalCommissionCollected.toLocaleString()} collected</span></div></div>`;
+  return `<div class="topbar"><div><h1>${title}</h1><p>${sub}</p></div><div class="topbar-actions"><span class="pill-btn">PKR ${(state.settings.total_commission_collected || 0).toLocaleString()} collected</span><button class="topbar-signout" onclick="doLogout()" aria-label="Sign out">${icon('logout', 16)}</button></div></div>`;
 }
 function tabContent() {
   return { dispatch: dispatchTab, drivers: driversTab, customers: customersTab, coupons: couponsTab, announcements: announcementsTab, commission: commissionTab }[state.tab]();
@@ -202,64 +266,66 @@ function tabContent() {
 
 /* ---- Dispatch tab ---- */
 function dispatchTab() {
-  const r = state.pendingRide;
-  if (r.status === 'pending_dispatch') {
-    const online = state.drivers.filter((d) => d.online);
-    return `<div class="card dispatch-request">
+  const pending = state.dispatch.pending || [];
+  const dispatched = state.dispatch.dispatched || [];
+  const online = state.drivers.filter((d) => d.driver_profile && d.driver_profile.online);
+
+  if (!pending.length && !dispatched.length) {
+    return '<div class="empty-state"><h2>No rides waiting on dispatch</h2><p>New requests from the rider app will appear here the moment a customer books.</p></div>';
+  }
+
+  return [
+    ...pending.map((r) => `<div class="card dispatch-request">
       <span class="status-pill">NEW REQUEST · AWAITING DISPATCH</span>
-      <h2>PKR ${r.fare} offer</h2>
-      <p class="muted">${r.rider} · ${r.riderRating} ★ · Verified rider<br>${r.pickup} → ${r.drop} · ${r.distanceKm} km</p>
+      <h2>PKR ${r.calculated_fare} · ${r.category}</h2>
+      <p class="muted">${r.customer ? r.customer.name : 'Rider'} · ${r.pickup_address} → ${r.drop_address} · ${r.distance_km} km</p>
       <h3 style="margin:18px 0 10px;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase">Assign a driver</h3>
-      ${online.map((d) => `<div class="driver-row"><img src="${d.photo}" alt=""><div class="info"><b>${d.name}</b><small>★ ${d.rating} · ${d.vehicle} · online</small></div><button class="btn-sm" onclick="assignDriver('${d.id}')">Assign</button></div>`).join('') || '<p class="muted">No drivers are online right now.</p>'}
-      <button class="pill-btn" style="margin-top:10px" onclick="cancelDispatchRide()">Cancel this request</button>
-    </div>`;
-  }
-  if (r.status === 'dispatched') {
-    const d = state.drivers.find((x) => x.id === r.assignedDriverId);
-    return `<div class="card dispatch-request">
+      ${online.map((d) => `<div class="driver-row"><img src="https://i.pravatar.cc/100?u=${d.id}" alt=""><div class="info"><b>${d.name}</b><small>★ ${d.rating} · ${d.driver_profile.vehicle_model || 'Vehicle'} · online</small></div><button class="btn-sm" onclick="assignDriver(${r.id},${d.id})">Assign</button></div>`).join('') || '<p class="muted">No drivers are online right now.</p>'}
+      <button class="pill-btn" style="margin-top:10px" onclick="cancelDispatchRide(${r.id})">Cancel this request</button>
+    </div>`),
+    ...dispatched.map((r) => `<div class="card dispatch-request">
       <span class="status-pill">WAITING ON DRIVER RESPONSE</span>
-      <h2>Dispatched to ${d ? d.name : 'driver'}</h2>
-      <p class="muted">${r.pickup} → ${r.drop} · PKR ${r.fare}</p>
-      ${d ? `<div class="driver-row"><img src="${d.photo}" alt=""><div class="info"><b>${d.name}</b><small>★ ${d.rating} · ${d.vehicle}</small></div></div>` : ''}
-      <button class="pill-btn" onclick="reassignRide()">Reassign to a different driver</button>
-    </div>`;
-  }
-  return `<div class="empty-state"><h2>No rides waiting on dispatch</h2><p>New requests from the rider app will appear here once the backend is connected.</p></div>`;
+      <h2>Dispatched to ${r.driver ? r.driver.name : 'driver'}</h2>
+      <p class="muted">${r.pickup_address} → ${r.drop_address} · PKR ${r.calculated_fare}</p>
+      <button class="pill-btn" onclick="reassignRide(${r.id})">Reassign to a different driver</button>
+    </div>`),
+  ].join('');
 }
-function assignDriver(id) { AdminApi.assignDriver(id); notify('Driver assigned'); render(); }
-function reassignRide() { AdminApi.reassign(); notify('Ride returned to the queue'); render(); }
-function cancelDispatchRide() { AdminApi.cancelRide(); notify('Request cancelled'); render(); }
+async function assignDriver(rideId, driverId) { try { await AdminApi.assignDriver(rideId, driverId); notify('Driver assigned'); render(); } catch (e) { notify(e.message); } }
+async function reassignRide(rideId) { try { await AdminApi.reassign(rideId); notify('Ride returned to the queue'); render(); } catch (e) { notify(e.message); } }
+async function cancelDispatchRide(rideId) { try { await AdminApi.cancelRide(rideId); notify('Request cancelled'); render(); } catch (e) { notify(e.message); } }
 
 /* ---- Drivers tab ---- */
 function driversTab() {
+  if (!state.drivers.length) return '<div class="empty-state"><h2>No drivers yet</h2><p>Driver accounts will appear here once they sign up.</p></div>';
   return `<div class="card"><table class="data-table"><thead><tr><th>Driver</th><th>Status</th><th>Rating</th><th>Acceptance</th><th>Cancellation</th><th>Strikes</th><th></th></tr></thead><tbody>
-    ${state.drivers.map((d) => `<tr>
-      <td><div class="table-driver"><img src="${d.photo}" alt=""><div><b>${d.name}</b><br><small style="color:var(--muted)">${d.vehicle} · ${d.plate}</small></div></div></td>
-      <td><span class="badge ${d.online ? 'on' : 'off'}" style="cursor:pointer" onclick="toggleDriverOnline('${d.id}')">${d.online ? 'Online' : 'Offline'}</span></td>
-      <td>${d.rating} ★</td>
-      <td>${d.acceptance}%</td>
-      <td>${d.cancellation}%</td>
-      <td>${d.strikes}</td>
-      <td><button class="link-btn" onclick="issuePenalty('${d.id}')">Issue penalty</button></td>
-    </tr>`).join('')}
+    ${state.drivers.map((d) => { const p = d.driver_profile || {}; return `<tr>
+      <td data-label="Driver"><div class="table-driver"><img src="https://i.pravatar.cc/100?u=${d.id}" alt=""><div><b>${d.name}</b><br><small style="color:var(--muted)">${p.vehicle_model || '—'} · ${p.plate_number || '—'}</small></div></div></td>
+      <td data-label="Status"><span class="badge ${p.online ? 'on' : 'off'}">${p.online ? 'Online' : 'Offline'}</span></td>
+      <td data-label="Rating">${d.rating} ★</td>
+      <td data-label="Acceptance">${p.acceptance_rate ?? 0}%</td>
+      <td data-label="Cancellation">${p.cancellation_rate ?? 0}%</td>
+      <td data-label="Strikes">${p.strikes ?? 0}</td>
+      <td data-label=""><button class="link-btn" onclick="issuePenalty(${d.id})">Issue penalty</button></td>
+    </tr>`; }).join('')}
   </tbody></table></div>`;
 }
-function toggleDriverOnline(id) { AdminApi.toggleDriverOnline(id); render(); }
-function issuePenalty(id) { AdminApi.issuePenalty(id); notify('Penalty logged'); render(); }
+async function issuePenalty(id) { try { await AdminApi.issuePenalty(id); notify('Penalty logged'); render(); } catch (e) { notify(e.message); } }
 
 /* ---- Customers tab ---- */
 function customersTab() {
+  if (!state.customers.length) return '<div class="empty-state"><h2>No customers yet</h2><p>Rider accounts will appear here once they sign up.</p></div>';
   return `<div class="card"><table class="data-table"><thead><tr><th>Customer</th><th>Rides</th><th>Rating</th><th>Status</th><th></th></tr></thead><tbody>
     ${state.customers.map((c) => `<tr>
-      <td><b>${c.name}</b></td>
-      <td>${c.rides}</td>
-      <td>${c.rating} ★</td>
-      <td><span class="badge ${c.blocked ? 'off' : 'on'}">${c.blocked ? 'Blocked' : 'Active'}</span></td>
-      <td><button class="link-btn ${c.blocked ? '' : 'danger'}" onclick="toggleBlacklist('${c.key}')">${c.blocked ? 'Unblock' : 'Block'}</button></td>
+      <td data-label="Customer"><b>${c.name}</b></td>
+      <td data-label="Rides">${c.rides}</td>
+      <td data-label="Rating">${c.rating} ★</td>
+      <td data-label="Status"><span class="badge ${c.blocked ? 'off' : 'on'}">${c.blocked ? 'Blocked' : 'Active'}</span></td>
+      <td data-label=""><button class="link-btn ${c.blocked ? '' : 'danger'}" onclick="toggleBlacklist(${c.id},${c.blocked})">${c.blocked ? 'Unblock' : 'Block'}</button></td>
     </tr>`).join('')}
   </tbody></table></div>`;
 }
-function toggleBlacklist(key) { AdminApi.toggleBlacklist(key); render(); }
+async function toggleBlacklist(id, blocked) { try { await AdminApi.toggleBlacklist(id, blocked); render(); } catch (e) { notify(e.message); } }
 
 /* ---- Coupons tab ---- */
 function couponsTab() {
@@ -274,21 +340,23 @@ function couponsTab() {
       <button class="btn-primary" onclick="createCoupon()">Create coupon</button>
     </div>
     <div class="card"><h3>Active &amp; disabled codes</h3>
-      ${state.coupons.map((c) => `<div class="coupon-row"><div><b>${c.code}</b><small>${c.type === 'percent' ? c.discount + '% off' : 'PKR ' + c.discount + ' off'}</small></div><div><button class="link-btn" onclick="toggleCoupon('${c.code}')">${c.active ? 'Disable' : 'Enable'}</button><button class="link-btn danger" onclick="deleteCoupon('${c.code}')">Delete</button></div></div>`).join('')}
+      ${state.coupons.map((c) => `<div class="coupon-row"><div><b>${c.code}</b><small>${c.type === 'percent' ? c.discount + '% off' : 'PKR ' + c.discount + ' off'}</small></div><div><button class="link-btn" onclick="toggleCoupon('${c.code}')">${c.active ? 'Disable' : 'Enable'}</button><button class="link-btn danger" onclick="deleteCoupon('${c.code}')">Delete</button></div></div>`).join('') || '<p class="muted">No coupons yet.</p>'}
     </div>
   </div>`;
 }
-function createCoupon() {
+async function createCoupon() {
   const code = document.getElementById('newCouponCode').value.trim().toUpperCase();
   const discount = Math.max(1, +document.getElementById('newCouponDiscount').value || 10);
   const type = document.getElementById('newCouponType').value;
   if (!code) return notify('Enter a coupon code');
-  if (!AdminApi.createCoupon(code, discount, type)) return notify('That code already exists');
-  notify(`Coupon ${code} created`);
-  render();
+  try {
+    if (!(await AdminApi.createCoupon(code, discount, type))) return notify('That code already exists');
+    notify(`Coupon ${code} created`);
+    render();
+  } catch (e) { notify(e.message); }
 }
-function toggleCoupon(code) { AdminApi.toggleCoupon(code); render(); }
-function deleteCoupon(code) { AdminApi.deleteCoupon(code); render(); }
+async function toggleCoupon(code) { try { await AdminApi.toggleCoupon(code); render(); } catch (e) { notify(e.message); } }
+async function deleteCoupon(code) { try { await AdminApi.deleteCoupon(code); render(); } catch (e) { notify(e.message); } }
 
 /* ---- Announcements tab ---- */
 function announcementsTab() {
@@ -300,33 +368,41 @@ function announcementsTab() {
       <button class="btn-primary" onclick="broadcastAnnouncement()">Send to everyone</button>
     </div>
     <div class="card"><h3>Recent announcements</h3>
-      ${state.announcements.map((a) => `<div class="announcement-row"><b>${a.title}</b><p>${a.body}</p><time>${a.time}</time></div>`).join('')}
+      ${state.announcements.map((a) => `<div class="announcement-row"><b>${a.title}</b><p>${a.body || ''}</p><time>${new Date(a.created_at).toLocaleString()}</time></div>`).join('') || '<p class="muted">No announcements yet.</p>'}
     </div>
   </div>`;
 }
-function broadcastAnnouncement() {
+async function broadcastAnnouncement() {
   const title = document.getElementById('annTitle').value.trim();
   const body = document.getElementById('annBody').value.trim();
   if (!title) return notify('Enter a title');
-  AdminApi.broadcastAnnouncement(title, body);
-  notify('Announcement broadcast to all riders and drivers');
-  render();
+  try {
+    await AdminApi.broadcastAnnouncement(title, body);
+    notify('Announcement broadcast to all riders and drivers');
+    render();
+  } catch (e) { notify(e.message); }
 }
 
 /* ---- Commission tab ---- */
 function commissionTab() {
   return `<div class="grid grid-3">
-    <div class="card commission-hero"><small>PLATFORM COMMISSION</small><h2>${Math.round(state.commissionRate * 100)}%</h2><div class="stepper-row"><button onclick="setCommission(-0.01)">−1%</button><button onclick="setCommission(0.01)">+1%</button></div></div>
-    <div class="card commission-hero"><small>SURGE MULTIPLIER</small><h2>${state.surge}×</h2><div class="stepper-row"><button onclick="setSurge(-0.1)">−0.1</button><button onclick="setSurge(0.1)">+0.1</button></div></div>
-    <div class="card stat-card"><small>TOTAL COMMISSION COLLECTED</small><b>PKR ${state.totalCommissionCollected.toLocaleString()}</b><span>Across all completed rides</span></div>
+    <div class="card commission-hero"><small>PLATFORM COMMISSION</small><h2>${Math.round(state.settings.commission_rate * 100)}%</h2><div class="stepper-row"><button onclick="setCommission(-0.01)">−1%</button><button onclick="setCommission(0.01)">+1%</button></div></div>
+    <div class="card commission-hero"><small>SURGE MULTIPLIER</small><h2>${state.settings.surge_multiplier}×</h2><div class="stepper-row"><button onclick="setSurge(-0.1)">−0.1</button><button onclick="setSurge(0.1)">+0.1</button></div></div>
+    <div class="card stat-card"><small>TOTAL COMMISSION COLLECTED</small><b>PKR ${(state.settings.total_commission_collected || 0).toLocaleString()}</b><span>Across all completed rides</span></div>
   </div>
   <div class="card" style="margin-top:14px"><p class="muted">Commission is applied automatically to every completed ride before it's added to the driver's wallet. Surge is shown to riders as a badge and folded into the suggested fare above 1×.</p></div>`;
 }
-function setCommission(delta) { AdminApi.setCommission(delta); render(); }
-function setSurge(delta) { AdminApi.setSurge(delta); render(); }
+async function setCommission(delta) { try { await AdminApi.setCommission(delta); render(); } catch (e) { notify(e.message); } }
+async function setSurge(delta) { try { await AdminApi.setSurge(delta); render(); } catch (e) { notify(e.message); } }
 
 /* ---- Root render ---- */
 function render() {
   document.getElementById('root').innerHTML = state.loggedIn ? shell() : authScreen();
+  if (!state.loggedIn) mountGoogleButton();
 }
-render();
+if (state.loggedIn) {
+  AdminApi.refreshAll().then(render).catch(() => { state.loggedIn = false; render(); });
+  startPolling();
+} else {
+  render();
+}
