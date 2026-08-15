@@ -533,6 +533,18 @@ function scDriverDocuments() {
   </div>`;
 }
 
+/* ---- Android hardware/gesture back button ----
+   The app never does real URL navigation (it's a single innerHTML SPA), so
+   WebView.canGoBack() is always false. MainActivity calls this instead so
+   back steps through in-app screens rather than exiting the app. */
+function screenBack() {
+  const map = { otp: 'login', search: 'customerHome', route: 'search', confirm: 'route' };
+  if (map[state.screen]) { goto(map[state.screen]); return true; }
+  if (state.role === 'driver' && state.driverTab !== 'home') { loadDriverTab('home'); return true; }
+  return false;
+}
+window.screenBack = screenBack;
+
 /* ---- Root render ---- */
 function tabContent() {
   if (state.driverTab === 'earnings') return scDriverEarnings();
