@@ -524,7 +524,7 @@ function scDriverHome() {
         <div class="p-sub">${ride.pickup_address} → ${ride.drop_address} · ${ride.distance_km} km</div>
         <div class="btn-row" style="margin-top:10px"><button class="btn" style="flex:1" onclick="acceptIncoming()">Accept</button><button class="btn outline" style="flex:1" onclick="rejectIncoming()">Decline</button></div>
       </div>` : ''}
-    ${!ride && !active ? `<div class="empty2"><h2>${state.driverOnline ? 'Waiting for a ride…' : 'You are offline'}</h2><p>${state.driverOnline ? 'New requests will appear here automatically.' : 'Flip the switch above to start receiving rides.'}</p></div>` : ''}
+    ${!ride && !active && !pending ? `<div class="empty2"><h2>${state.driverOnline ? 'Waiting for a ride…' : 'You are offline'}</h2><p>${state.driverOnline ? 'New requests will appear here automatically.' : 'Flip the switch above to start receiving rides.'}</p></div>` : ''}
     <div class="spacer"></div>
   </div>`;
 }
