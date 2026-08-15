@@ -135,6 +135,9 @@ table.data-table tr:hover td{background:var(--panel-2)}
   table.data-table td::before{content:attr(data-label);font-size:9px;font-weight:800;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;flex-shrink:0}
   table.data-table td:has(.table-driver)::before{display:none}
   table.data-table td:has(.table-driver){justify-content:flex-start}
+  table.data-table td.docs-row{display:block;border-top:0}
+  table.data-table td.docs-row::before{display:none}
+  table.data-table td.docs-row .grid-3{grid-template-columns:1fr}
 
   .driver-row{flex-wrap:wrap}
   .driver-row .btn-sm{width:100%;margin-top:8px;order:3}

@@ -328,7 +328,7 @@ function driversTab() {
         <button class="link-btn" onclick="issuePenalty(${d.id})">Penalty</button>
       </td>
     </tr>
-    ${state.expandedDriver === d.id ? `<tr><td colspan="6" style="padding:0 12px 16px"><div class="grid grid-3" style="gap:10px">
+    ${state.expandedDriver === d.id ? `<tr><td colspan="6" class="docs-row" style="padding:0 12px 16px"><div class="grid grid-3" style="gap:10px">
       ${Object.keys(DOC_LABELS).map((type) => {
         const doc = docs.find((x) => x.type === type);
         if (!doc) return `<div class="card" style="padding:10px"><b style="font-size:12px">${DOC_LABELS[type]}</b><p class="muted" style="margin-top:6px">Not uploaded</p></div>`;
