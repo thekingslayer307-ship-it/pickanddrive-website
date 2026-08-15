@@ -22,7 +22,7 @@ function seedState() {
     pickup: null, drop: null, dropQuery: '', dropResults: [],
     category: 'city', fareEstimate: null,
     activeRide: null,
-    driverTab: 'home', driverOnline: false, incomingRide: null, earnings: null, wallet: null,
+    driverTab: 'home', driverOnline: false, incomingRide: null, earnings: null, wallet: null, documents: [],
     rating: 0,
   };
 }
@@ -50,6 +50,18 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
       ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) { logout(); throw new Error('Session expired — please sign in again'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
+  return data;
+}
+
+async function apiUpload(path, formData) {
+  const res = await fetch(API_BASE + path, {
+    method: 'POST',
+    headers: { Accept: 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}) },
+    body: formData,
   });
   if (res.status === 401) { logout(); throw new Error('Session expired — please sign in again'); }
   const data = await res.json().catch(() => ({}));
@@ -272,6 +284,7 @@ async function loadDriverTab(tab) {
   state.driverTab = tab;
   try {
     if (tab === 'earnings') { state.earnings = await apiRequest('/driver/earnings'); state.wallet = await apiRequest('/driver/wallet'); }
+    if (tab === 'documents') { state.documents = await apiRequest('/driver/documents'); }
   } catch (e) { toast(e.message); }
   refresh();
 }
@@ -282,6 +295,33 @@ async function requestWithdrawal() {
     await apiRequest('/driver/wallet/withdraw', { method: 'POST', body: { amount } });
     toast('Withdrawal requested');
     loadDriverTab('earnings');
+  } catch (e) { toast(e.message); }
+}
+
+/* ---- Driver documents ---- */
+const DOC_TYPES = [
+  { id: 'cnic_front', label: 'CNIC — Front' },
+  { id: 'cnic_back', label: 'CNIC — Back' },
+  { id: 'license', label: 'Driving License' },
+  { id: 'vehicle_reg', label: 'Vehicle Registration' },
+  { id: 'selfie', label: 'Selfie' },
+];
+function pickDocument(type) {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*';
+  input.onchange = () => { if (input.files[0]) uploadDocument(type, input.files[0]); };
+  document.body.appendChild(input);
+  input.click();
+  setTimeout(() => input.remove(), 1000);
+}
+async function uploadDocument(type, file) {
+  try {
+    const fd = new FormData();
+    fd.append('type', type);
+    fd.append('file', file);
+    await apiUpload('/driver/documents', fd);
+    toast('Uploaded — pending review');
+    loadDriverTab('documents');
   } catch (e) { toast(e.message); }
 }
 
@@ -476,15 +516,34 @@ function scDriverEarnings() {
   </div>`;
 }
 
+function scDriverDocuments() {
+  const statusLabel = { pending: 'Pending review', verified: 'Verified', rejected: 'Rejected — re-upload' };
+  return `<div class="p-pad" style="gap:14px">
+    <div class="p-title">Documents</div>
+    <p class="p-sub">Upload clear photos of each document. Our team reviews them before you can go online.</p>
+    ${DOC_TYPES.map(dt => {
+      const doc = state.documents.find(d => d.type === dt.id);
+      const badge = doc ? statusLabel[doc.status] || doc.status : 'Not uploaded';
+      const badgeColor = doc && doc.status === 'verified' ? 'var(--green-ink)' : doc && doc.status === 'rejected' ? 'var(--red-ink)' : 'var(--muted)';
+      return `<div class="card2" style="display:flex;justify-content:space-between;align-items:center">
+        <div><b>${dt.label}</b><div class="p-sub" style="color:${badgeColor}">${badge}</div></div>
+        <button class="btn outline" style="width:auto;padding:9px 14px" onclick="pickDocument('${dt.id}')">${doc ? 'Re-upload' : 'Upload'}</button>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 /* ---- Root render ---- */
 function tabContent() {
   if (state.driverTab === 'earnings') return scDriverEarnings();
+  if (state.driverTab === 'documents') return scDriverDocuments();
   return scDriverHome();
 }
 function driverShell() {
   return `${tabContent()}
   <div class="bottom-nav">
     <button class="${state.driverTab === 'home' ? 'active' : ''}" onclick="loadDriverTab('home')">🚦<span>Home</span></button>
+    <button class="${state.driverTab === 'documents' ? 'active' : ''}" onclick="loadDriverTab('documents')">📄<span>Documents</span></button>
     <button class="${state.driverTab === 'earnings' ? 'active' : ''}" onclick="loadDriverTab('earnings')">💰<span>Earnings</span></button>
   </div>`;
 }
