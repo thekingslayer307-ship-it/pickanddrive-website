@@ -89,6 +89,19 @@
   .mega-visual{ transform:scale(1.04); }
   @media (max-width:940px){ .mega-visual{ transform:none; } }
 
+  @media (max-width:560px){
+    .mega-hero{ padding:80px 0 48px; }
+    .eyebrow{ display:inline-block; background:color-mix(in srgb, var(--gold) 15%, transparent); padding:6px 14px; border-radius:99px; font-size:10px; }
+    .mega-hero h1{ font-size:clamp(32px,10vw,44px); line-height:1.04; margin:14px 0 14px; }
+    .mega-hero p{ font-size:15.5px; line-height:1.6; margin:0 0 24px; }
+    .btn-row{ flex-direction:column; }
+    .mega-hero .btn-row .btn{ width:100%; justify-content:center; padding:16px 22px; }
+    .hero-stats{ gap:0; margin-top:26px; background:var(--bg-card); border:1px solid var(--line); border-radius:18px; padding:16px 4px; box-shadow:var(--shadow); }
+    .hero-stats div{ flex:1 1 0; min-width:0; text-align:center; border-right:1px solid var(--line); padding:0 4px; font-size:10.5px; line-height:1.3; }
+    .hero-stats div:last-child{ border-right:0; }
+    .hero-stats b{ font-size:19px; margin-bottom:2px; }
+  }
+
   /* hero visual: fixed-fare dispatch mock card */
   .visual-card{ background:var(--bg-card); border:1px solid var(--line); border-radius:26px; padding:24px; position:relative; box-shadow:var(--shadow); }
   .vc-map{ position:relative; height:190px; border-radius:18px; overflow:hidden; background:linear-gradient(160deg,var(--bg-alt),var(--line)); margin-bottom:18px; }
