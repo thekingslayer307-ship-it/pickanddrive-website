@@ -179,7 +179,25 @@
   .service-card.intercity .service-links a{ color:var(--ink); border-color:var(--line); background:var(--bg-alt); }
   .service-card.intercity .service-links a:hover{ background:var(--gold); border-color:var(--gold); }
   @media (max-width:900px){ .service-grid{ grid-template-columns:1fr; grid-template-rows:auto; } .service-card.city{ grid-row:auto; min-height:540px; } .service-card:not(.city){ min-height:300px; } }
-  @media (max-width:560px){ .rides-shell::before,.rides-shell::after{ display:none; } .service-card{ border-radius:25px; } .service-card.city{ min-height:505px; } .service-card.city .svc-art{ inset:64px -20% 178px -6%; } .service-card.city .svc-body{ left:23px; right:23px; bottom:23px; grid-template-columns:1fr; gap:17px; } .service-card:not(.city){ grid-template-columns:1fr; padding:54px 23px 23px; } .service-card:not(.city) .svc-art{ height:190px; } .service-card:not(.city) .svc-art img{ width:100%; height:230px; } .service-card:not(.city) .svc-body{ padding-left:0; } }
+  @media (max-width:560px){
+    .rides-shell::before,.rides-shell::after{ display:none; }
+    .service-card{ border-radius:22px; }
+    .service-grid{ grid-template-columns:1fr 1fr; gap:12px; }
+    .service-card.city{ grid-column:1 / -1; order:2; min-height:420px; }
+    .service-card.city .svc-art{ inset:60px -20% 150px -6%; }
+    .service-card.city .svc-body{ left:20px; right:20px; bottom:20px; grid-template-columns:1fr; gap:14px; }
+    .service-card.city .svc-body h3{ font-size:28px; }
+    .service-card:not(.city){ order:1; grid-template-columns:1fr; align-items:stretch; padding:16px 14px 14px; min-height:0; }
+    .service-card:not(.city) .svc-number{ position:static; margin-bottom:10px; font-size:8.5px; }
+    .service-card:not(.city) .svc-art{ height:88px; }
+    .service-card:not(.city) .svc-art img{ width:88%; height:96px; }
+    .service-card:not(.city) .svc-body{ padding-left:0; }
+    .service-card:not(.city) .svc-kicker{ font-size:8.5px; margin-bottom:5px; }
+    .service-card:not(.city) .svc-body h3{ font-size:19px; margin-bottom:5px; }
+    .service-card:not(.city) .svc-body p{ font-size:11.5px; max-width:none; }
+    .service-card:not(.city) .service-links{ margin-top:12px; flex-direction:column; gap:6px; }
+    .service-card:not(.city) .service-links a{ width:100%; justify-content:center; min-height:34px; padding:8px 10px; font-size:10px; }
+  }
 
   /* ---------------- EARN / DRIVE SECTION ---------------- */
   .earn{ background:var(--bg-alt); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
