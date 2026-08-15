@@ -83,17 +83,34 @@ async function reverseGeocode(lat, lng) {
 }
 
 /* ---- Auth ---- */
-async function requestOtp() {
-  const raw = ($('phoneInput') && $('phoneInput').value || '').replace(/[^0-9]/g, '');
-  if (raw.length < 10) return toast('Enter a valid mobile number');
-  const phone = '0' + raw.replace(/^0+/, '');
+function normalizedPhone(raw) {
+  const digits = (raw || '').replace(/[^0-9]/g, '');
+  return digits.length >= 10 ? '0' + digits.replace(/^0+/, '') : null;
+}
+async function sendOtpFor(phone) {
   state.phone = phone;
+  const res = await apiRequest('/auth/otp/request', { method: 'POST', body: { phone } });
+  toast(res.debug_code ? `OTP: ${res.debug_code}` : `OTP sent to ${phone}`);
+  state.otp = ['', '', '', '']; state.otpTimer = 30;
+  goto('otp');
+  tickOtpTimer();
+}
+async function requestOtp() {
+  const phone = normalizedPhone($('phoneInput') && $('phoneInput').value);
+  if (!phone) return toast('Enter a valid mobile number');
+  try { await sendOtpFor(phone); } catch (e) { toast(e.message); }
+}
+async function registerDriver() {
+  const name = ($('signupName') && $('signupName').value || '').trim();
+  const phone = normalizedPhone($('signupPhone') && $('signupPhone').value);
+  const vehicle_model = ($('signupVehicle') && $('signupVehicle').value || '').trim();
+  const plate_number = ($('signupPlate') && $('signupPlate').value || '').trim();
+  const category = $('signupCategory') && $('signupCategory').value;
+  if (!name || !phone || !vehicle_model || !plate_number) return toast('Fill in all fields');
   try {
-    const res = await apiRequest('/auth/otp/request', { method: 'POST', body: { phone } });
-    toast(res.debug_code ? `OTP: ${res.debug_code}` : `OTP sent to ${phone}`);
-    state.otp = ['', '', '', '']; state.otpTimer = 30;
-    goto('otp');
-    tickOtpTimer();
+    await apiRequest('/auth/driver/register', { method: 'POST', body: { name, phone, vehicle_model, plate_number, category } });
+    toast('Application submitted — verify your number to continue');
+    await sendOtpFor(phone);
   } catch (e) { toast(e.message); }
 }
 function tickOtpTimer() {
@@ -347,7 +364,26 @@ function scLogin() {
     <div><div class="field-label">Mobile Number</div>
     <input class="field-input" id="phoneInput" type="tel" inputmode="numeric" placeholder="0300 1234567" maxlength="11"></div>
     <button class="btn" onclick="requestOtp()">Send OTP</button>
+    <div class="link" onclick="goto('driverSignup')">Drive with us — register as a driver</div>
     <div class="spacer"></div>
+  </div>`;
+}
+function scDriverSignup() {
+  return `<div class="p-pad">
+    <div class="back" onclick="goto('login')">← Back</div>
+    <div class="p-title">Become a driver</div>
+    <div class="p-sub">Submit your details — our team reviews every application before you can go online.</div>
+    <div class="field-label">Full name</div>
+    <input class="field-input" id="signupName" placeholder="Your full name">
+    <div class="field-label">Mobile number</div>
+    <input class="field-input" id="signupPhone" type="tel" inputmode="numeric" placeholder="0300 1234567" maxlength="11">
+    <div class="field-label">Vehicle</div>
+    <input class="field-input" id="signupVehicle" placeholder="e.g. Honda City 2024">
+    <div class="field-label">Plate number</div>
+    <input class="field-input" id="signupPlate" placeholder="e.g. LEA-1234">
+    <div class="field-label">Category</div>
+    <select class="field-input" id="signupCategory">${CATS.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('')}</select>
+    <button class="btn" style="margin-top:6px" onclick="registerDriver()">Submit application</button>
   </div>`;
 }
 function scOtp() {
@@ -472,12 +508,15 @@ function scRate() {
 function scDriverHome() {
   const ride = state.incomingRide;
   const active = state.activeRide;
+  const pending = state.user && state.user.status === 'pending_approval';
   return `<div class="p-pad" style="gap:14px">
     <div class="topbar2"><span class="brandmark">🔑 Pick&amp;Drive</span><span class="link" onclick="logout()">Sign out</span></div>
-    <div class="card2" style="display:flex;justify-content:space-between;align-items:center">
+    ${pending
+      ? `<div class="card2"><b>Application under review</b><div class="p-sub">We're reviewing your documents and details. You'll be able to go online once approved.</div></div>`
+      : `<div class="card2" style="display:flex;justify-content:space-between;align-items:center">
       <div><b>${state.driverOnline ? 'You are online' : 'You are offline'}</b><div class="p-sub">${state.driverOnline ? 'Waiting for ride requests' : 'Go online to start receiving rides'}</div></div>
       <div class="switch ${state.driverOnline ? 'on' : ''}" onclick="toggleOnline()"><div class="knob"></div></div>
-    </div>
+    </div>`}
     ${active ? driverActiveCard(active) : ''}
     ${ride && !active ? `<div class="card2">
         <span class="pill">NEW RIDE REQUEST</span>
@@ -538,7 +577,7 @@ function scDriverDocuments() {
    WebView.canGoBack() is always false. MainActivity calls this instead so
    back steps through in-app screens rather than exiting the app. */
 function screenBack() {
-  const map = { otp: 'login', search: 'customerHome', route: 'search', confirm: 'route' };
+  const map = { otp: 'login', driverSignup: 'login', search: 'customerHome', route: 'search', confirm: 'route' };
   if (map[state.screen]) { goto(map[state.screen]); return true; }
   if (state.role === 'driver' && state.driverTab !== 'home') { loadDriverTab('home'); return true; }
   return false;
@@ -560,7 +599,7 @@ function driverShell() {
   </div>`;
 }
 const SCREENS = {
-  login: scLogin, otp: scOtp,
+  login: scLogin, otp: scOtp, driverSignup: scDriverSignup,
   customerHome: scCustomerHome, search: scSearch, route: scRoute, confirm: scConfirm,
   waiting: scWaiting, tracking: scTracking, rate: scRate,
 };
