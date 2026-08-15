@@ -13,6 +13,7 @@ function seedState() {
     tab: 'dispatch',
     dispatch: { pending: [], dispatched: [] },
     drivers: [],
+    expandedDriver: null,
     customers: [],
     coupons: [],
     announcements: [],
@@ -100,6 +101,18 @@ const AdminApi = {
   },
   async issuePenalty(id) {
     await apiRequest(`/admin/drivers/${id}/penalty`, { method: 'POST', body: { reason: 'Penalty issued from admin console' } });
+    await AdminApi.refreshAll();
+  },
+  async approveDriver(id) {
+    await apiRequest(`/admin/drivers/${id}/approve`, { method: 'POST' });
+    await AdminApi.refreshAll();
+  },
+  async suspendDriver(id) {
+    await apiRequest(`/admin/drivers/${id}/suspend`, { method: 'POST' });
+    await AdminApi.refreshAll();
+  },
+  async verifyDocument(docId, status) {
+    await apiRequest(`/admin/documents/${docId}/verify`, { method: 'POST', body: { status } });
     await AdminApi.refreshAll();
   },
   async toggleBlacklist(key, blocked) {
@@ -296,20 +309,47 @@ async function reassignRide(rideId) { try { await AdminApi.reassign(rideId); not
 async function cancelDispatchRide(rideId) { try { await AdminApi.cancelRide(rideId); notify('Request cancelled'); render(); } catch (e) { notify(e.message); } }
 
 /* ---- Drivers tab ---- */
+const DOC_LABELS = { cnic_front: 'CNIC — Front', cnic_back: 'CNIC — Back', license: 'Driving License', vehicle_reg: 'Vehicle Registration', selfie: 'Selfie' };
 function driversTab() {
   if (!state.drivers.length) return '<div class="empty-state"><h2>No drivers yet</h2><p>Driver accounts will appear here once they sign up.</p></div>';
-  return `<div class="card"><table class="data-table"><thead><tr><th>Driver</th><th>Status</th><th>Rating</th><th>Acceptance</th><th>Cancellation</th><th>Strikes</th><th></th></tr></thead><tbody>
-    ${state.drivers.map((d) => { const p = d.driver_profile || {}; return `<tr>
-      <td data-label="Driver"><div class="table-driver"><img src="https://i.pravatar.cc/100?u=${d.id}" alt=""><div><b>${d.name}</b><br><small style="color:var(--muted)">${p.vehicle_model || '—'} · ${p.plate_number || '—'}</small></div></div></td>
-      <td data-label="Status"><span class="badge ${p.online ? 'on' : 'off'}">${p.online ? 'Online' : 'Offline'}</span></td>
+  return `<div class="card"><table class="data-table"><thead><tr><th>Driver</th><th>Account</th><th>Online</th><th>Rating</th><th>Strikes</th><th></th></tr></thead><tbody>
+    ${state.drivers.map((d) => { const p = d.driver_profile || {}; const docs = d.driver_documents || [];
+      const accountBadge = d.status === 'active' ? '<span class="badge on">Active</span>' : d.status === 'suspended' ? '<span class="badge off">Suspended</span>' : '<span class="badge" style="background:#e3b24c22;color:var(--accent)">Pending approval</span>';
+      return `<tr>
+      <td data-label="Driver"><div class="table-driver"><img src="https://i.pravatar.cc/100?u=${d.id}" alt=""><div><b>${d.name}</b><br><small style="color:var(--muted)">${p.vehicle_model || '—'} · ${p.plate_number || '—'} · ${p.category || '—'}</small></div></div></td>
+      <td data-label="Account">${accountBadge}</td>
+      <td data-label="Online"><span class="badge ${p.online ? 'on' : 'off'}">${p.online ? 'Online' : 'Offline'}</span></td>
       <td data-label="Rating">${d.rating} ★</td>
-      <td data-label="Acceptance">${p.acceptance_rate ?? 0}%</td>
-      <td data-label="Cancellation">${p.cancellation_rate ?? 0}%</td>
       <td data-label="Strikes">${p.strikes ?? 0}</td>
-      <td data-label=""><button class="link-btn" onclick="issuePenalty(${d.id})">Issue penalty</button></td>
-    </tr>`; }).join('')}
+      <td data-label="">
+        <button class="link-btn" onclick="toggleDriverDocs(${d.id})">${state.expandedDriver === d.id ? 'Hide' : 'Documents'} (${docs.length}/5)</button>
+        ${d.status === 'pending_approval' ? `<button class="link-btn" onclick="approveDriver(${d.id})">Approve</button>` : ''}
+        ${d.status !== 'suspended' ? `<button class="link-btn danger" onclick="suspendDriver(${d.id})">Suspend</button>` : `<button class="link-btn" onclick="approveDriver(${d.id})">Reactivate</button>`}
+        <button class="link-btn" onclick="issuePenalty(${d.id})">Penalty</button>
+      </td>
+    </tr>
+    ${state.expandedDriver === d.id ? `<tr><td colspan="6" style="padding:0 12px 16px"><div class="grid grid-3" style="gap:10px">
+      ${Object.keys(DOC_LABELS).map((type) => {
+        const doc = docs.find((x) => x.type === type);
+        if (!doc) return `<div class="card" style="padding:10px"><b style="font-size:12px">${DOC_LABELS[type]}</b><p class="muted" style="margin-top:6px">Not uploaded</p></div>`;
+        const statusColor = doc.status === 'verified' ? 'var(--green)' : doc.status === 'rejected' ? 'var(--red)' : 'var(--accent)';
+        return `<div class="card" style="padding:10px">
+          <b style="font-size:12px">${DOC_LABELS[type]}</b>
+          <a href="https://api.pickanddrive.pk/storage/${doc.file_path}" target="_blank"><img src="https://api.pickanddrive.pk/storage/${doc.file_path}" alt="" style="width:100%;border-radius:8px;margin-top:6px;display:block;max-height:140px;object-fit:cover"></a>
+          <p style="margin:6px 0 8px;font-size:11px;font-weight:800;color:${statusColor};text-transform:capitalize">${doc.status}</p>
+          <div style="display:flex;gap:6px">
+            <button class="pill-btn gold" style="flex:1;padding:7px;font-size:11px" onclick="verifyDoc(${doc.id},'verified')">Verify</button>
+            <button class="pill-btn" style="flex:1;padding:7px;font-size:11px" onclick="verifyDoc(${doc.id},'rejected')">Reject</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div></td></tr>` : ''}`; }).join('')}
   </tbody></table></div>`;
 }
+function toggleDriverDocs(id) { state.expandedDriver = state.expandedDriver === id ? null : id; render(); }
+async function approveDriver(id) { try { await AdminApi.approveDriver(id); notify('Driver approved'); render(); } catch (e) { notify(e.message); } }
+async function suspendDriver(id) { try { await AdminApi.suspendDriver(id); notify('Driver suspended'); render(); } catch (e) { notify(e.message); } }
+async function verifyDoc(docId, status) { try { await AdminApi.verifyDocument(docId, status); notify(status === 'verified' ? 'Document verified' : 'Document rejected'); render(); } catch (e) { notify(e.message); } }
 async function issuePenalty(id) { try { await AdminApi.issuePenalty(id); notify('Penalty logged'); render(); } catch (e) { notify(e.message); } }
 
 /* ---- Customers tab ---- */
