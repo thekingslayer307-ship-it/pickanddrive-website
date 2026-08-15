@@ -89,7 +89,7 @@
   .mega-visual{ transform:scale(1.04); }
   @media (max-width:940px){ .mega-visual{ transform:none; } }
 
-  /* hero visual: negotiation mock card */
+  /* hero visual: fixed-fare dispatch mock card */
   .visual-card{ background:var(--bg-card); border:1px solid var(--line); border-radius:26px; padding:24px; position:relative; box-shadow:var(--shadow); }
   .vc-map{ position:relative; height:190px; border-radius:18px; overflow:hidden; background:linear-gradient(160deg,var(--bg-alt),var(--line)); margin-bottom:18px; }
   .vc-map svg{ position:absolute; inset:0; width:100%; height:100%; }
@@ -242,20 +242,20 @@
     </div>
     <div class="nav-right">
       <span class="nav-lang">🇵🇰 EN</span>
-      <a class="nav-cta" href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Get the App</a>
+      <a class="nav-cta" href="https://pickanddrive.pk/app/">Book a Ride</a>
     </div>
   </div>
 </nav>
 
-<!-- MEGA HERO: Rider / fare negotiation -->
+<!-- MEGA HERO: Rider / fixed fare -->
 <header class="mega-hero">
   <div class="wrap">
     <div class="reveal in">
       <div class="eyebrow">For Riders, Across Pakistan</div>
-      <h1>Fair fares, decided by <span class="accent">you.</span></h1>
-      <p>See the real calculated fare first — never inflated. Offer less if you want, and let nearby drivers accept, decline, or counter. No pressure, no black box.</p>
+      <h1>Fair fares, calculated <span class="accent">up front.</span></h1>
+      <p>See your exact fare before you book — calculated automatically from real distance and time, never inflated. Our team dispatches the nearest available driver by hand. No bidding, no surprises.</p>
       <div class="btn-row">
-        <a class="btn primary" href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Try the Live Demo</a>
+        <a class="btn primary" href="https://pickanddrive.pk/app/">Try It Live</a>
         <a class="btn ghost" href="#rides">See Ride Options</a>
       </div>
       <div class="hero-stats">
@@ -278,8 +278,8 @@
             <svg width="24" height="30" viewBox="0 0 24 31" fill="var(--ink)"><path d="M12 31C12 31 23 18.7 23 12A11 11 0 1 0 1 12C1 18.7 12 31 12 31Z"/><circle cx="12" cy="12" r="4.5" fill="var(--gold)"/></svg>
           </div>
         </div>
-        <div class="fare-row"><div><div class="l">Suggested Fare</div><div class="v">Rs 320</div></div><div style="text-align:right;"><div class="l">Your Offer</div><div class="v" id="demoFare">280</div></div></div>
-        <div class="fare-status" id="demoStatus">Sending your offer to nearby drivers…</div>
+        <div class="fare-row"><div><div class="l">Distance</div><div class="v">8.2 km</div></div><div style="text-align:right;"><div class="l">Calculated Fare</div><div class="v">Rs <span id="demoFare">320</span></div></div></div>
+        <div class="fare-status" id="demoStatus">Booking received — finding a driver…</div>
       </div>
     </div>
   </div>
@@ -321,7 +321,7 @@
           <div class="svc-body">
             <div><span class="svc-kicker">Your city, your fare</span><h3>City Ride</h3><p>Forever fair rides across town, priced by distance and time.</p></div>
             <div class="service-links">
-              <a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Ride now</a>
+              <a href="https://pickanddrive.pk/app/">Ride now</a>
               <a href="#earn">Drive</a>
             </div>
           </div>
@@ -333,7 +333,7 @@
             <span class="svc-kicker">From here to there</span><h3>Delivery</h3>
             <p>Same-day parcels and documents, dispatched fair.</p>
             <div class="service-links">
-              <a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Send now</a>
+              <a href="https://pickanddrive.pk/app/">Send now</a>
               <a href="#earn">Deliver</a>
             </div>
           </div>
@@ -343,9 +343,9 @@
           <div class="svc-art"><img src="src/codex%20generated%20graphics/intercity.png" alt="Driver helping a passenger load luggage into the car" loading="lazy" /></div>
           <div class="svc-body">
             <span class="svc-kicker">Beyond city limits</span><h3>City to City</h3>
-            <p>Comfortable trips between cities, at a fare you agree to first.</p>
+            <p>Comfortable trips between cities, at a fare calculated before you book.</p>
             <div class="service-links">
-              <a href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Plan a trip</a>
+              <a href="https://pickanddrive.pk/app/">Plan a trip</a>
               <a href="#earn">Drive</a>
             </div>
           </div>
@@ -360,14 +360,14 @@
   <div class="wrap earn-grid">
     <div class="reveal">
       <div class="eyebrow">For Drivers</div>
-      <h2>Drive on your terms, earn what you agree to.</h2>
-      <p class="lede">Pick&amp;Drive never auto-assigns you a ride you didn't see coming. Every request shows the pickup, drop and fare before you accept — and you can counter-offer if the number's not right.</p>
+      <h2>Drive on your terms, know your earnings upfront.</h2>
+      <p class="lede">Pick&amp;Drive never auto-assigns you a ride you didn't see coming. Every request shows the pickup, drop and calculated fare before you accept — simple accept or decline, no back-and-forth.</p>
       <ul class="earn-list">
         <li><span class="chk">✓</span>See the full fare before accepting, always</li>
-        <li><span class="chk">✓</span>Counter a rider's offer instead of just declining</li>
+        <li><span class="chk">✓</span>Fixed commission — no hidden cuts from your fare</li>
         <li><span class="chk">✓</span>Weekly payouts straight to your wallet</li>
       </ul>
-      <div class="btn-row"><a class="btn primary" href="#">Apply to Drive</a></div>
+      <div class="btn-row"><a class="btn primary" href="https://pickanddrive.pk/app/">Apply to Drive</a></div>
     </div>
     <div class="reveal">
       <div class="earn-stats">
@@ -405,9 +405,9 @@
   <div class="wrap">
     <div class="reveal">
       <h2>See the whole ride, before you take one.</h2>
-      <p>The live demo is the real product experience — book a ride, name your fare, watch dispatch play out.</p>
+      <p>This is the real product — book a ride, see your fare calculated instantly, and watch dispatch assign your driver.</p>
       <div class="btn-row" style="justify-content:center;">
-        <a class="btn primary" href="https://pickanddrive-prototype.vercel.app" target="_blank" rel="noopener">Open the Interactive Demo</a>
+        <a class="btn primary" href="https://pickanddrive.pk/app/">Book Your First Ride</a>
       </div>
     </div>
   </div>
@@ -488,10 +488,10 @@
   var statusEl = document.getElementById('demoStatus');
   if (fareEl && !REDUCE) {
     var steps = [
-      { fare: 280, status: 'Sending your offer to nearby drivers…' },
-      { fare: 295, status: 'Driver counters with Rs 295…' },
-      { fare: 295, status: 'You accept — ride confirmed ✓' },
-      { fare: 320, status: 'New trip — calculated fare shown first…' }
+      { fare: 320, status: 'Booking received — finding a driver…' },
+      { fare: 320, status: 'Driver assigned — notifying them…' },
+      { fare: 320, status: 'Driver accepted — on the way ✓' },
+      { fare: 285, status: 'New trip — fare calculated instantly…' }
     ];
     var i = 0;
     function tick(){
