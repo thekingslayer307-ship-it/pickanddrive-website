@@ -140,17 +140,29 @@ function finishLogin(res) {
   if (state.role === 'driver') { goto('driverHome'); startPolling(); }
   else { goto('customerHome'); startPolling(); }
 }
-async function handleGoogleCredential(response) {
+async function submitGoogleIdToken(idToken) {
   try {
-    const res = await apiRequest('/auth/google', { method: 'POST', body: { id_token: response.credential } });
+    const res = await apiRequest('/auth/google', { method: 'POST', body: { id_token: idToken } });
     finishLogin(res);
   } catch (e) { toast(e.message); }
 }
-if (GOOGLE_CLIENT_ID && window.google) {
+async function handleGoogleCredential(response) { submitGoogleIdToken(response.credential); }
+
+/* The Android app wraps this page in a WebView, and Google blocks OAuth sign-in from inside
+   embedded WebViews (403: disallowed_useragent) — so inside the app, native Android code handles
+   the actual sign-in (via Credential Manager) and hands the resulting ID token back here through
+   this bridge, reusing the same /auth/google backend call as the web GSI button. */
+const inNativeApp = typeof AndroidBridge !== 'undefined' && !!AndroidBridge.hasNativeGoogleSignIn && AndroidBridge.hasNativeGoogleSignIn();
+window.onNativeGoogleToken = function (idToken) { submitGoogleIdToken(idToken); };
+window.onNativeGoogleError = function (message) { toast(message || 'Google sign-in failed'); };
+
+if (!inNativeApp && GOOGLE_CLIENT_ID && window.google) {
   google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential });
 }
 function mountGoogleButton() {
-  if (GOOGLE_CLIENT_ID && window.google && $('googleBtn')) {
+  if (inNativeApp && $('googleBtn')) {
+    $('googleBtn').innerHTML = `<button class="btn outline" style="width:100%" onclick="AndroidBridge.signInWithGoogle()">Sign in with Google</button>`;
+  } else if (GOOGLE_CLIENT_ID && window.google && $('googleBtn')) {
     google.accounts.id.renderButton($('googleBtn'), { theme: 'outline', size: 'large', width: 320 });
   }
 }
@@ -382,7 +394,7 @@ function scLogin() {
     <div><div class="field-label">Mobile Number</div>
     <input class="field-input" id="phoneInput" type="tel" inputmode="numeric" placeholder="0300 1234567" maxlength="11"></div>
     <button class="btn" onclick="requestOtp()">Send OTP</button>
-    ${GOOGLE_CLIENT_ID ? `<div class="p-sub" style="text-align:center;margin:14px 0 2px">or</div><div id="googleBtn" style="display:flex;justify-content:center"></div>` : ''}
+    ${(inNativeApp || GOOGLE_CLIENT_ID) ? `<div class="p-sub" style="text-align:center;margin:14px 0 2px">or</div><div id="googleBtn" style="display:flex;justify-content:center"></div>` : ''}
     <div class="link" onclick="goto('driverSignup')">Drive with us — register as a driver</div>
     <div class="spacer"></div>
   </div>`;
