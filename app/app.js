@@ -4,6 +4,7 @@
 
 const API_BASE = 'https://api.pickanddrive.pk/api/v1';
 const KEY = 'pickanddrive-app-v1';
+const GOOGLE_CLIENT_ID = ''; // TODO: fill in once a Google Cloud OAuth client exists
 
 const CATS = [
   { id: 'bike', icon: '🏍', name: 'Bike' },
@@ -129,12 +130,29 @@ async function verifyOtp() {
   if (code.length !== 4) return;
   try {
     const res = await apiRequest('/auth/otp/verify', { method: 'POST', body: { phone: state.phone, code } });
-    state.token = res.token; state.user = res.user; state.role = res.user.role;
-    persist();
-    toast(`Welcome, ${res.user.name}`);
-    if (state.role === 'driver') { goto('driverHome'); startPolling(); }
-    else { goto('customerHome'); startPolling(); }
+    finishLogin(res);
   } catch (e) { toast(e.message); render(); }
+}
+function finishLogin(res) {
+  state.token = res.token; state.user = res.user; state.role = res.user.role;
+  persist();
+  toast(`Welcome, ${res.user.name}`);
+  if (state.role === 'driver') { goto('driverHome'); startPolling(); }
+  else { goto('customerHome'); startPolling(); }
+}
+async function handleGoogleCredential(response) {
+  try {
+    const res = await apiRequest('/auth/google', { method: 'POST', body: { id_token: response.credential } });
+    finishLogin(res);
+  } catch (e) { toast(e.message); }
+}
+if (GOOGLE_CLIENT_ID && window.google) {
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential });
+}
+function mountGoogleButton() {
+  if (GOOGLE_CLIENT_ID && window.google && $('googleBtn')) {
+    google.accounts.id.renderButton($('googleBtn'), { theme: 'outline', size: 'large', width: 320 });
+  }
 }
 function logout() {
   stopPolling();
@@ -364,6 +382,7 @@ function scLogin() {
     <div><div class="field-label">Mobile Number</div>
     <input class="field-input" id="phoneInput" type="tel" inputmode="numeric" placeholder="0300 1234567" maxlength="11"></div>
     <button class="btn" onclick="requestOtp()">Send OTP</button>
+    ${GOOGLE_CLIENT_ID ? `<div class="p-sub" style="text-align:center;margin:14px 0 2px">or</div><div id="googleBtn" style="display:flex;justify-content:center"></div>` : ''}
     <div class="link" onclick="goto('driverSignup')">Drive with us — register as a driver</div>
     <div class="spacer"></div>
   </div>`;
@@ -609,6 +628,7 @@ function render() {
   if (state.token && state.screen === 'login') state.screen = 'customerHome';
   root.innerHTML = (SCREENS[state.screen] || scLogin)();
   if (state.screen === 'otp') { const f = $('otp0'); if (f) f.focus(); }
+  if (state.screen === 'login') mountGoogleButton();
 }
 function refresh() { render(); }
 
