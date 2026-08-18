@@ -402,12 +402,14 @@ const DOC_TYPES = [
 function pickDocument(type) {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
+  if (type === 'selfie') input.capture = 'user'; // forces the front camera directly, no gallery chooser
   input.onchange = () => { if (input.files[0]) uploadDocument(type, input.files[0]); };
   document.body.appendChild(input);
   input.click();
   setTimeout(() => input.remove(), 1000);
 }
 async function uploadDocument(type, file) {
+  if (file.size > 9.5 * 1024 * 1024) return toast('That photo is too large (max 10MB) — try again, some cameras save smaller sizes automatically');
   try {
     const fd = new FormData();
     fd.append('type', type);
@@ -415,7 +417,9 @@ async function uploadDocument(type, file) {
     await apiUpload('/driver/documents', fd);
     toast('Uploaded — pending review');
     loadDriverTab('documents');
-  } catch (e) { toast(e.message); }
+  } catch (e) {
+    toast(e.message === 'Failed to fetch' ? 'Upload failed — check your connection and try again' : e.message);
+  }
 }
 
 /* ---- OTP input handling ---- */
