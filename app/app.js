@@ -253,23 +253,29 @@ async function useCurrentLocation() {
 }
 
 let dropDebounce = null;
+function renderDropSuggestionsInPlace() {
+  const el = $('dropSuggestions');
+  if (el) el.innerHTML = renderDropSuggestions();
+}
 function onDropInput(v) {
   state.dropQuery = v;
   clearTimeout(dropDebounce);
-  if (v.trim().length < 3) { state.dropResults = []; refresh(); return; }
+  if (v.trim().length < 3) { state.dropResults = []; renderDropSuggestionsInPlace(); return; }
   dropDebounce = setTimeout(async () => {
     try {
       const results = await geocodeSearch(v);
       state.dropResults = results.map(r => ({ label: r.display_name, lat: +r.lat, lng: +r.lon }));
     } catch (e) { state.dropResults = []; }
-    refresh();
+    renderDropSuggestionsInPlace();
   }, 550);
 }
 function pickDrop(i) {
   const r = state.dropResults[i];
   state.drop = { address: r.label.split(',').slice(0, 3).join(','), lat: r.lat, lng: r.lng };
   state.dropResults = [];
+  state.fareEstimate = null;
   goto('route');
+  if (state.pickup) selectCategory(state.category); // auto-fetch the estimate for the already-selected category
 }
 
 async function selectCategory(id) {
@@ -495,13 +501,15 @@ function scCustomerHome() {
     </div>
   </div>`;
 }
+function renderDropSuggestions() {
+  return state.dropResults.map((r, i) => `<div class="sugg" onclick="pickDrop(${i})"><span class="ico">📍</span><div><div class="t">${r.label.split(',')[0]}</div><div class="s">${r.label.split(',').slice(1, 3).join(',')}</div></div></div>`).join('');
+}
 function scSearch() {
-  const sugg = state.dropResults.map((r, i) => `<div class="sugg" onclick="pickDrop(${i})"><span class="ico">📍</span><div><div class="t">${r.label.split(',')[0]}</div><div class="s">${r.label.split(',').slice(1, 3).join(',')}</div></div></div>`).join('');
   return `<div class="p-pad">
     <div class="back" onclick="goto('customerHome')">← Set your route</div>
     <div class="field" onclick="useCurrentLocation()"><span class="dot g"></span><span class="txt">${state.pickup ? state.pickup.address : 'Use current location'}</span></div>
     <input class="field-input" id="dropInput" placeholder="Search drop-off address…" value="${state.dropQuery}" oninput="onDropInput(this.value)">
-    <div>${sugg}</div>
+    <div id="dropSuggestions">${renderDropSuggestions()}</div>
     ${!state.pickup ? '<p class="p-sub">Tap the location field above to set your pickup point.</p>' : ''}
   </div>`;
 }
@@ -521,7 +529,7 @@ function scRoute() {
           <div class="row"><span>ETA</span><b>${est.duration_min} min</b></div>
           ${est.night_surcharge ? `<div class="row"><span>Night surcharge</span><b>PKR ${est.night_surcharge}</b></div>` : ''}
           ${est.surge_multiplier > 1 ? `<div class="row"><span>Surge</span><b>${est.surge_multiplier}×</b></div>` : ''}
-        </div>` : `<div class="spin"></div>`}
+        </div>` : state.pickup ? `<div class="spin"></div>` : `<p class="p-sub">Set your pickup point first — go back and tap the location field.</p>`}
     </div>
     <div class="spacer"></div>
     <button class="btn" ${est ? '' : 'disabled'} onclick="goto('confirm')">Continue</button>
