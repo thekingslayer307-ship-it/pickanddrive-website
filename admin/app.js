@@ -18,6 +18,7 @@ function seedState() {
     coupons: [],
     announcements: [],
     settings: { commission_rate: 0.15, surge_multiplier: 1, total_commission_collected: 0 },
+    notifications: [], notifPanelOpen: false,
   };
 }
 
@@ -232,8 +233,26 @@ let pollTimer = null;
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
-    if (state.loggedIn) apiRequest('/admin/dispatch/queue').then((q) => { state.dispatch = q; save(); if (state.tab === 'dispatch') render(); }).catch(() => {});
+    if (!state.loggedIn) return;
+    apiRequest('/admin/dispatch/queue').then((q) => { state.dispatch = q; save(); if (state.tab === 'dispatch') render(); }).catch(() => {});
+    apiRequest('/notifications').then((n) => { state.notifications = n; save(); if (state.notifPanelOpen) render(); else renderBellBadge(); }).catch(() => {});
   }, 8000);
+}
+function renderBellBadge() {
+  const el = document.getElementById('notifBadge');
+  const count = state.notifications.filter((n) => !n.read).length;
+  if (el) { el.style.display = count ? 'flex' : 'none'; el.textContent = count > 9 ? '9+' : String(count); }
+}
+async function toggleNotifPanel() {
+  state.notifPanelOpen = !state.notifPanelOpen;
+  if (state.notifPanelOpen) {
+    try { state.notifications = await apiRequest('/notifications'); } catch (e) {}
+    apiRequest('/notifications/read', { method: 'POST' }).then(() => {
+      state.notifications = state.notifications.map((n) => ({ ...n, read: true }));
+      save();
+    }).catch(() => {});
+  }
+  render();
 }
 function stopPolling() {
   if (pollTimer) clearInterval(pollTimer);
@@ -271,7 +290,19 @@ function shell() {
 function topbar() {
   const titles = { dispatch: ['Dispatch queue', 'Assign drivers to incoming ride requests'], drivers: ['Drivers', 'Monitor performance and manage penalties'], customers: ['Customers', 'Manage rider accounts and the blacklist'], coupons: ['Coupons', 'Create and manage promo codes'], announcements: ['Announcements', 'Broadcast messages to every rider and driver'], commission: ['Commission & surge', 'Platform fee and demand pricing controls'] };
   const [title, sub] = titles[state.tab] || ['', ''];
-  return `<div class="topbar"><div><h1>${title}</h1><p>${sub}</p></div><div class="topbar-actions"><span class="pill-btn">PKR ${(state.settings.total_commission_collected || 0).toLocaleString()} collected</span><button class="topbar-signout" onclick="doLogout()" aria-label="Sign out">${icon('logout', 16)}</button></div></div>`;
+  const unread = state.notifications.filter((n) => !n.read).length;
+  return `<div class="topbar"><div><h1>${title}</h1><p>${sub}</p></div><div class="topbar-actions">
+    <span class="pill-btn">PKR ${(state.settings.total_commission_collected || 0).toLocaleString()} collected</span>
+    <button class="bell-btn" onclick="toggleNotifPanel()" aria-label="Notifications">🔔<span id="notifBadge" class="bell-badge" style="display:${unread ? 'flex' : 'none'}">${unread > 9 ? '9+' : unread}</span></button>
+    <button class="topbar-signout" onclick="doLogout()" aria-label="Sign out">${icon('logout', 16)}</button>
+  </div></div>${state.notifPanelOpen ? notifPanel() : ''}`;
+}
+function notifPanel() {
+  const rows = state.notifications.map((n) => {
+    const urgent = /SOS/i.test(n.title);
+    return `<div class="notif-row ${urgent ? 'urgent' : ''}"><b>${n.title}</b><p>${n.body || ''}</p><time>${new Date(n.created_at).toLocaleString()}</time></div>`;
+  }).join('') || '<p class="muted" style="padding:16px">No notifications yet.</p>';
+  return `<div class="notif-panel"><div class="notif-panel-head"><b>Notifications</b><button class="link-btn" onclick="toggleNotifPanel()">Close</button></div><div class="notif-panel-body">${rows}</div></div>`;
 }
 function tabContent() {
   return { dispatch: dispatchTab, drivers: driversTab, customers: customersTab, coupons: couponsTab, announcements: announcementsTab, commission: commissionTab }[state.tab]();

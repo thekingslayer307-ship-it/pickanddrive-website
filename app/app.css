@@ -107,3 +107,29 @@ input.field-input:focus{box-shadow:0 0 0 2.5px var(--gold);background:#fff}
 .empty2 h2{color:var(--ink);font-size:15px;margin:0 0 6px}
 .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(0,0,0,.15);border-top-color:var(--gold-deep);animation:spin .7s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---- Live map ---- */
+.live-map{height:190px;border-radius:16px;overflow:hidden;background:var(--fill)}
+.driver-marker{width:26px;height:26px;border-radius:50%;background:var(--gold);border:3px solid var(--gold-ink);display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 3px 8px rgba(0,0,0,.3)}
+.pin-marker{width:14px;height:14px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.pin-marker.pickup{background:var(--green)}
+.pin-marker.drop{background:var(--ink)}
+
+/* ---- Safety row (share trip / SOS) ---- */
+.safety-row{display:flex;gap:8px}
+.safety-row button{flex:1;border-radius:13px;padding:11px;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;border:1px solid var(--line);background:var(--fill);color:var(--ink)}
+.safety-row button.sos{background:var(--red-bg);color:var(--red-ink);border-color:transparent}
+
+/* ---- Chat overlay ---- */
+.chat-overlay{position:fixed;inset:0;background:var(--page);z-index:40;display:flex;flex-direction:column}
+.chat-head{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.chat-head .back{margin:0}
+.chat-body{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.chat-msg{max-width:78%;padding:10px 13px;border-radius:15px;font-size:13.5px;line-height:1.4}
+.chat-msg.mine{align-self:flex-end;background:var(--gold);color:var(--gold-ink);border-bottom-right-radius:4px}
+.chat-msg.theirs{align-self:flex-start;background:var(--fill);color:var(--ink);border-bottom-left-radius:4px}
+.chat-msg time{display:block;font-size:9.5px;opacity:.6;margin-top:3px}
+.chat-input-row{display:flex;gap:8px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);flex:0 0 auto}
+.chat-input-row input{flex:1;border:none;background:var(--fill);border-radius:99px;padding:12px 16px;font-size:13.5px;font-family:inherit;outline:none;color:var(--ink)}
+.chat-input-row button{border:0;background:var(--gold);color:var(--gold-ink);width:44px;height:44px;border-radius:50%;font-weight:800;cursor:pointer;flex-shrink:0}
+.chat-empty{text-align:center;color:var(--muted);font-size:12.5px;margin-top:30px}

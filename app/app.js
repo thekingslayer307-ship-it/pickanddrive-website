@@ -25,8 +25,12 @@ function seedState() {
     activeRide: null,
     driverTab: 'home', driverOnline: false, incomingRide: null, earnings: null, wallet: null, documents: [],
     rating: 0,
+    chatOpen: false, chatMessages: [],
   };
 }
+let liveMap = null, liveMapMarker = null, liveMapRideId = null;
+let locationWatchId = null, lastLocationSentAt = 0;
+let chatPollTimer = null;
 let state = JSON.parse(localStorage.getItem(KEY) || 'null') || seedState();
 function persist() {
   const { token, role, user, driverOnline } = state;
@@ -168,6 +172,9 @@ function mountGoogleButton() {
 }
 function logout() {
   stopPolling();
+  stopChatPolling();
+  stopLocationBroadcast();
+  if (liveMap) { liveMap.remove(); liveMap = null; liveMapMarker = null; liveMapRideId = null; }
   state = seedState();
   persist();
   render();
@@ -190,16 +197,22 @@ async function pollTick() {
       if (!ride || !ride.id) {
         if (state.activeRide && wasTracking) {
           state.activeRide = null; state.pickup = null; state.drop = null; state.fareEstimate = null;
+          teardownLiveMap();
           toast('Your ride was cancelled');
           goto('customerHome');
         }
         return;
       }
+      const statusChanged = !state.activeRide || state.activeRide.status !== ride.status;
       state.activeRide = ride;
       if (ride.status === 'completed') { goto('rate'); return; }
       if (['pending_dispatch', 'dispatched'].includes(ride.status) && !['confirm', 'rate'].includes(state.screen)) state.screen = 'waiting';
       if (['accepted', 'arriving', 'arrived', 'in_progress'].includes(ride.status)) state.screen = 'tracking';
-      render();
+      if (statusChanged) {
+        render();
+      } else if (state.screen === 'tracking' && !state.chatOpen) {
+        updateLiveMapMarker(ride);
+      }
     } else if (state.role === 'driver') {
       if (state.driverOnline && !state.incomingRide && (!state.activeRide || ['completed'].includes(state.activeRide.status))) {
         const ride = await apiRequest('/driver/incoming');
@@ -276,11 +289,15 @@ async function bookRide() {
     goto('waiting');
   } catch (e) { toast(e.message); }
 }
+function teardownLiveMap() {
+  if (liveMap) { liveMap.remove(); liveMap = null; liveMapMarker = null; liveMapRideId = null; }
+}
 async function cancelActiveRide() {
   if (!state.activeRide) return;
   try {
     await apiRequest(`/rides/${state.activeRide.id}/cancel`, { method: 'POST' });
     state.activeRide = null; state.pickup = null; state.drop = null; state.fareEstimate = null;
+    teardownLiveMap();
     toast('Ride cancelled');
     goto('customerHome');
   } catch (e) { toast(e.message); }
@@ -291,6 +308,7 @@ async function submitRating() {
     await apiRequest(`/rides/${state.activeRide.id}/rate`, { method: 'POST', body: { rating: state.rating || 5 } });
     toast('Thanks for rating your ride');
     state.activeRide = null; state.pickup = null; state.drop = null; state.fareEstimate = null; state.rating = 0;
+    teardownLiveMap();
     goto('customerHome');
   } catch (e) { toast(e.message); }
 }
@@ -304,10 +322,25 @@ async function toggleOnline() {
     refresh();
   } catch (e) { toast(e.message); }
 }
+function startLocationBroadcast() {
+  stopLocationBroadcast();
+  if (!navigator.geolocation) return;
+  locationWatchId = navigator.geolocation.watchPosition((pos) => {
+    const now = Date.now();
+    if (now - lastLocationSentAt < 8000) return;
+    lastLocationSentAt = now;
+    apiRequest('/driver/location', { method: 'POST', body: { lat: pos.coords.latitude, lng: pos.coords.longitude } }).catch(() => {});
+  }, () => {}, { enableHighAccuracy: true });
+}
+function stopLocationBroadcast() {
+  if (locationWatchId !== null && navigator.geolocation) navigator.geolocation.clearWatch(locationWatchId);
+  locationWatchId = null;
+}
 async function acceptIncoming() {
   try {
     const ride = await apiRequest(`/driver/rides/${state.incomingRide.id}/accept`, { method: 'POST' });
     state.activeRide = ride; state.incomingRide = null;
+    startLocationBroadcast();
     goto('driverActive');
   } catch (e) { toast(e.message); }
 }
@@ -323,7 +356,7 @@ async function advanceRideStatus() {
   try {
     const ride = await apiRequest(`/driver/rides/${state.activeRide.id}/status`, { method: 'PATCH' });
     state.activeRide = ride;
-    if (ride.status === 'completed') { toast('Trip completed'); state.activeRide = null; state.driverTab = 'home'; goto('driverHome'); }
+    if (ride.status === 'completed') { stopLocationBroadcast(); toast('Trip completed'); state.activeRide = null; state.driverTab = 'home'; goto('driverHome'); }
     else refresh();
   } catch (e) { toast(e.message); }
 }
@@ -484,6 +517,98 @@ function scConfirm() {
     <button class="btn" onclick="bookRide()">Confirm booking</button>
   </div>`;
 }
+/* ---- Live map (Leaflet + OSM tiles) ---- */
+function initLiveMap(ride) {
+  const el = $('liveMapEl');
+  if (!el || !window.L) return;
+  if (liveMap && liveMapRideId === ride.id) { updateLiveMapMarker(ride); return; }
+  if (liveMap) { liveMap.remove(); liveMap = null; liveMapMarker = null; }
+  liveMapRideId = ride.id;
+  const pickup = [+ride.pickup_lat, +ride.pickup_lng];
+  const drop = [+ride.drop_lat, +ride.drop_lng];
+  liveMap = L.map('liveMapEl', { zoomControl: false, attributionControl: false }).fitBounds([pickup, drop], { padding: [30, 30] });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(liveMap);
+  L.marker(pickup, { icon: L.divIcon({ className: '', html: '<div class="pin-marker pickup"></div>', iconSize: [14, 14] }) }).addTo(liveMap);
+  L.marker(drop, { icon: L.divIcon({ className: '', html: '<div class="pin-marker drop"></div>', iconSize: [14, 14] }) }).addTo(liveMap);
+  const dp = ride.driver && ride.driver.driver_profile;
+  if (dp && dp.last_lat && dp.last_lng) {
+    liveMapMarker = L.marker([+dp.last_lat, +dp.last_lng], { icon: L.divIcon({ className: '', html: '<div class="driver-marker">🚗</div>', iconSize: [26, 26] }) }).addTo(liveMap);
+  }
+}
+function updateLiveMapMarker(ride) {
+  if (!liveMap) return;
+  const dp = ride.driver && ride.driver.driver_profile;
+  if (!dp || !dp.last_lat || !dp.last_lng) return;
+  const pos = [+dp.last_lat, +dp.last_lng];
+  if (liveMapMarker) liveMapMarker.setLatLng(pos);
+  else liveMapMarker = L.marker(pos, { icon: L.divIcon({ className: '', html: '<div class="driver-marker">🚗</div>', iconSize: [26, 26] }) }).addTo(liveMap);
+}
+
+/* ---- Chat ---- */
+function openChat() { state.chatOpen = true; render(); loadChatMessages(); startChatPolling(); }
+function closeChat() { state.chatOpen = false; stopChatPolling(); render(); }
+async function loadChatMessages() {
+  if (!state.activeRide) return;
+  try {
+    state.chatMessages = await apiRequest(`/rides/${state.activeRide.id}/messages`);
+    const body = $('chatBody');
+    if (state.chatOpen && body) { body.innerHTML = renderChatMessages(); body.scrollTop = body.scrollHeight; }
+  } catch (e) { /* silent on poll */ }
+}
+function renderChatMessages() {
+  return state.chatMessages.map(m => {
+    const mine = m.sender && state.user && m.sender.id === state.user.id;
+    return `<div class="chat-msg ${mine ? 'mine' : 'theirs'}">${m.message}<time>${new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>`;
+  }).join('') || '<div class="chat-empty">No messages yet — say hello.</div>';
+}
+function startChatPolling() { stopChatPolling(); chatPollTimer = setInterval(loadChatMessages, 4000); }
+function stopChatPolling() { if (chatPollTimer) clearInterval(chatPollTimer); chatPollTimer = null; }
+async function sendChatMessage() {
+  const input = $('chatInput');
+  const text = (input && input.value || '').trim();
+  if (!text || !state.activeRide) return;
+  input.value = '';
+  try {
+    await apiRequest(`/rides/${state.activeRide.id}/messages`, { method: 'POST', body: { message: text } });
+    loadChatMessages();
+  } catch (e) { toast(e.message); }
+}
+function chatOverlay() {
+  const ride = state.activeRide;
+  const otherName = state.role === 'driver' ? (ride.customer ? ride.customer.name : 'Rider') : (ride.driver ? ride.driver.name : 'Driver');
+  return `<div class="chat-overlay">
+    <div class="chat-head"><div class="back" onclick="closeChat()">← ${otherName}</div></div>
+    <div class="chat-body" id="chatBody">${renderChatMessages()}</div>
+    <div class="chat-input-row">
+      <input id="chatInput" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendChatMessage()">
+      <button onclick="sendChatMessage()">➤</button>
+    </div>
+  </div>`;
+}
+
+/* ---- Safety: share trip + SOS ---- */
+function shareTrip() {
+  const ride = state.activeRide;
+  if (!ride) return;
+  const text = `I'm on a Pick&Drive trip: ${ride.pickup_address} → ${ride.drop_address}. Driver: ${ride.driver ? ride.driver.name : 'assigned soon'}${ride.driver ? ', plate ' + (ride.driver.driver_profile ? ride.driver.driver_profile.plate_number : '') : ''}.`;
+  if (navigator.share) {
+    navigator.share({ title: 'My Pick&Drive trip', text }).catch(() => {});
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => toast('Trip details copied — paste to share'));
+  } else {
+    toast(text);
+  }
+}
+async function triggerSos() {
+  const ride = state.activeRide;
+  if (!ride) return;
+  if (!confirm('Send an SOS alert to our safety team right now?')) return;
+  try {
+    await apiRequest(`/rides/${ride.id}/sos`, { method: 'POST' });
+    toast('Alert sent — our team has been notified');
+  } catch (e) { toast(e.message); }
+}
+
 function rideStatusSteps(status) {
   const order = ['pending_dispatch', 'dispatched', 'accepted', 'arriving', 'arrived', 'in_progress'];
   const labels = { pending_dispatch: 'Finding a driver', dispatched: 'Driver notified', accepted: 'Driver on the way', arriving: 'Driver arriving', arrived: 'Driver has arrived', in_progress: 'Trip in progress' };
@@ -513,10 +638,16 @@ function scTracking() {
   const driver = ride.driver || {};
   return `<div class="p-pad" style="gap:12px">
     <div class="back" onclick="goto('waiting')">Trip status</div>
+    <div id="liveMapEl" class="live-map"></div>
     <div id="stepListWrap" style="width:100%;text-align:left;background:var(--fill);border-radius:14px;padding:6px 12px">${rideStatusSteps(ride.status)}</div>
     <div class="driver-card">
-      <div class="driver-row2"><div class="avatar">${(driver.name || 'D').slice(0, 1)}</div><div class="driver-info"><div class="t">${driver.name || 'Your driver'}</div><div class="s">★ ${driver.rating || '—'}</div></div></div>
+      <div class="driver-row2"><div class="avatar">${(driver.name || 'D').slice(0, 1)}</div><div class="driver-info"><div class="t">${driver.name || 'Your driver'}</div><div class="s">★ ${driver.rating || '—'}</div></div>
+      <button class="pill" style="margin-left:auto;border:0;cursor:pointer" onclick="openChat()">💬 Chat</button></div>
       <div style="display:flex;justify-content:space-between;align-items:center"><span class="p-sub">Fare</span><span class="p-title" style="font-size:16px">PKR ${ride.calculated_fare}</span></div>
+    </div>
+    <div class="safety-row">
+      <button onclick="shareTrip()">📍 Share trip</button>
+      <button class="sos" onclick="triggerSos()">🆘 SOS</button>
     </div>
     <div class="spacer"></div>
     <div class="link" onclick="cancelActiveRide()">Cancel trip</div>
@@ -562,7 +693,7 @@ function scDriverHome() {
 function driverActiveCard(ride) {
   const nextLabel = { accepted: 'Mark arriving', arriving: 'Mark arrived', arrived: 'Start trip', in_progress: 'Complete trip' };
   return `<div class="card2">
-    <span class="pill">ACTIVE TRIP</span>
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="pill">ACTIVE TRIP</span><button class="pill" style="border:0;cursor:pointer" onclick="openChat()">💬 ${ride.customer ? ride.customer.name : 'Rider'}</button></div>
     <div class="p-title" style="margin-top:8px;font-size:16px">PKR ${ride.calculated_fare} · ${ride.status.replace('_', ' ')}</div>
     <div class="p-sub">${ride.pickup_address} → ${ride.drop_address}</div>
     <button class="btn" style="margin-top:10px" onclick="advanceRideStatus()">${nextLabel[ride.status] || 'Update status'}</button>
@@ -608,6 +739,7 @@ function scDriverDocuments() {
    WebView.canGoBack() is always false. MainActivity calls this instead so
    back steps through in-app screens rather than exiting the app. */
 function screenBack() {
+  if (state.chatOpen) { closeChat(); return true; }
   const map = { otp: 'login', driverSignup: 'login', search: 'customerHome', route: 'search', confirm: 'route' };
   if (map[state.screen]) { goto(map[state.screen]); return true; }
   if (state.role === 'driver' && state.driverTab !== 'home') { loadDriverTab('home'); return true; }
@@ -636,11 +768,21 @@ const SCREENS = {
 };
 function render() {
   const root = $('root');
-  if (state.role === 'driver' && state.token) { root.innerHTML = driverShell(); return; }
+  if (state.role === 'driver' && state.token) {
+    root.innerHTML = driverShell() + (state.chatOpen && state.activeRide ? chatOverlay() : '');
+    scrollChatToBottom();
+    return;
+  }
   if (state.token && state.screen === 'login') state.screen = 'customerHome';
-  root.innerHTML = (SCREENS[state.screen] || scLogin)();
+  root.innerHTML = (SCREENS[state.screen] || scLogin)() + (state.chatOpen && state.activeRide ? chatOverlay() : '');
   if (state.screen === 'otp') { const f = $('otp0'); if (f) f.focus(); }
   if (state.screen === 'login') mountGoogleButton();
+  if (state.screen === 'tracking' && state.activeRide) setTimeout(() => initLiveMap(state.activeRide), 0);
+  scrollChatToBottom();
+}
+function scrollChatToBottom() {
+  const body = $('chatBody');
+  if (body) body.scrollTop = body.scrollHeight;
 }
 function refresh() { render(); }
 
