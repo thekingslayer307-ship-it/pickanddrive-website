@@ -17,8 +17,11 @@ function seedState() {
     customers: [],
     coupons: [],
     announcements: [],
-    settings: { commission_rate: 0.15, surge_multiplier: 1, total_commission_collected: 0 },
+    settings: { commission_rate: 0.15, surge_multiplier: 1, total_commission_collected: 0, fare_settings: [] },
     notifications: [], notifPanelOpen: false,
+    withdrawals: [], complaints: [],
+    liveMapRides: [],
+    reportRides: { data: [] }, revenueReport: null, reportFilters: { status: '', category: '', from: '', to: '' },
   };
 }
 
@@ -65,13 +68,15 @@ const AdminApi = {
     return { token: data.token, name: data.user.name };
   },
   async refreshAll() {
-    const [queue, drivers, customers, coupons, announcements, settings] = await Promise.all([
+    const [queue, drivers, customers, coupons, announcements, settings, withdrawals, complaints] = await Promise.all([
       apiRequest('/admin/dispatch/queue'),
       apiRequest('/admin/drivers'),
       apiRequest('/admin/customers'),
       apiRequest('/admin/coupons'),
       apiRequest('/admin/announcements'),
       apiRequest('/admin/settings'),
+      apiRequest('/admin/withdrawals'),
+      apiRequest('/admin/complaints'),
     ]);
     state.dispatch = queue;
     state.drivers = drivers;
@@ -79,6 +84,46 @@ const AdminApi = {
     state.coupons = coupons;
     state.announcements = announcements;
     state.settings = settings;
+    state.withdrawals = withdrawals;
+    state.complaints = complaints;
+    save();
+  },
+  async createCategory(body) {
+    await apiRequest('/admin/settings/fare', { method: 'POST', body });
+    await AdminApi.refreshAll();
+  },
+  async updateCategory(id, body) {
+    await apiRequest(`/admin/settings/fare/${id}`, { method: 'PATCH', body });
+    await AdminApi.refreshAll();
+  },
+  async deleteCategory(id) {
+    await apiRequest(`/admin/settings/fare/${id}`, { method: 'DELETE' });
+    await AdminApi.refreshAll();
+  },
+  async approveWithdrawal(id) {
+    await apiRequest(`/admin/withdrawals/${id}/approve`, { method: 'POST' });
+    await AdminApi.refreshAll();
+  },
+  async rejectWithdrawal(id) {
+    await apiRequest(`/admin/withdrawals/${id}/reject`, { method: 'POST' });
+    await AdminApi.refreshAll();
+  },
+  async resolveComplaint(id, adminNote) {
+    await apiRequest(`/admin/complaints/${id}/resolve`, { method: 'POST', body: { admin_note: adminNote } });
+    await AdminApi.refreshAll();
+  },
+  async loadReportRides() {
+    const f = state.reportFilters;
+    const params = Object.entries(f).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+    state.reportRides = await apiRequest(`/admin/rides${params ? '?' + params : ''}`);
+    save();
+  },
+  async loadRevenueReport() {
+    state.revenueReport = await apiRequest('/admin/reports/revenue');
+    save();
+  },
+  async loadLiveMap() {
+    state.liveMapRides = await apiRequest('/admin/live-map');
     save();
   },
   async assignDriver(rideId, driverId) {
@@ -163,6 +208,11 @@ const ICONS = {
   announcements: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/>',
   commission: '<path d="M4 6h15a2 2 0 0 1 2 2v10H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h13"/><path d="M16 10h5v4h-5a2 2 0 0 1 0-4Z"/>',
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
+  categories: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  wallet: '<rect x="2" y="6" width="20" height="14" rx="2.5"/><path d="M2 10h20"/><circle cx="17" cy="15" r="1.4"/>',
+  complaints: '<path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4A9 9 0 0 1 4 20l-1 1 1-4A8.4 8.4 0 1 1 21 11.5Z"/>',
+  reports: '<path d="M4 20V10M12 20V4M20 20v-7"/>',
+  map: '<path d="m9 4-6 2v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/>',
 };
 function icon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
@@ -262,13 +312,22 @@ function stopPolling() {
 /* ---- App shell ---- */
 const TABS = [
   ['dispatch', 'Dispatch', 'dispatch'],
+  ['livemap', 'Live Map', 'map'],
   ['drivers', 'Drivers', 'drivers'],
   ['customers', 'Customers', 'customers'],
+  ['categories', 'Ride Categories', 'categories'],
   ['coupons', 'Coupons', 'coupons'],
+  ['withdrawals', 'Withdrawals', 'wallet'],
+  ['complaints', 'Complaints', 'complaints'],
+  ['reports', 'Reports', 'reports'],
   ['announcements', 'Announcements', 'announcements'],
   ['commission', 'Commission & surge', 'commission'],
 ];
-function setTab(tab) { state.tab = tab; save(); render(); }
+function setTab(tab) {
+  state.tab = tab; save(); render();
+  if (tab === 'livemap') AdminApi.loadLiveMap().then(render).catch(() => {});
+  if (tab === 'reports') { AdminApi.loadReportRides().then(render).catch(() => {}); AdminApi.loadRevenueReport().then(render).catch(() => {}); }
+}
 
 function shell() {
   const hasPending = state.dispatch.pending.length > 0;
@@ -288,7 +347,7 @@ function shell() {
   </div>`;
 }
 function topbar() {
-  const titles = { dispatch: ['Dispatch queue', 'Assign drivers to incoming ride requests'], drivers: ['Drivers', 'Monitor performance and manage penalties'], customers: ['Customers', 'Manage rider accounts and the blacklist'], coupons: ['Coupons', 'Create and manage promo codes'], announcements: ['Announcements', 'Broadcast messages to every rider and driver'], commission: ['Commission & surge', 'Platform fee and demand pricing controls'] };
+  const titles = { dispatch: ['Dispatch queue', 'Assign drivers to incoming ride requests'], livemap: ['Live map', 'All rides currently in progress'], drivers: ['Drivers', 'Monitor performance and manage penalties'], customers: ['Customers', 'Manage rider accounts and the blacklist'], categories: ['Ride categories', 'Configure the categories riders can book'], coupons: ['Coupons', 'Create and manage promo codes'], withdrawals: ['Withdrawals', 'Review driver wallet withdrawal requests'], complaints: ['Complaints', 'Support messages from riders and drivers'], reports: ['Reports', 'Ride history and revenue reporting'], announcements: ['Announcements', 'Broadcast messages to every rider and driver'], commission: ['Commission & surge', 'Platform fee and demand pricing controls'] };
   const [title, sub] = titles[state.tab] || ['', ''];
   const unread = state.notifications.filter((n) => !n.read).length;
   return `<div class="topbar"><div><h1>${title}</h1><p>${sub}</p></div><div class="topbar-actions">
@@ -305,7 +364,11 @@ function notifPanel() {
   return `<div class="notif-panel"><div class="notif-panel-head"><b>Notifications</b><button class="link-btn" onclick="toggleNotifPanel()">Close</button></div><div class="notif-panel-body">${rows}</div></div>`;
 }
 function tabContent() {
-  return { dispatch: dispatchTab, drivers: driversTab, customers: customersTab, coupons: couponsTab, announcements: announcementsTab, commission: commissionTab }[state.tab]();
+  return {
+    dispatch: dispatchTab, drivers: driversTab, customers: customersTab, coupons: couponsTab,
+    announcements: announcementsTab, commission: commissionTab,
+    livemap: liveMapTab, categories: categoriesTab, withdrawals: withdrawalsTab, complaints: complaintsTab, reports: reportsTab,
+  }[state.tab]();
 }
 
 /* ---- Dispatch tab ---- */
@@ -465,6 +528,155 @@ function commissionTab() {
 }
 async function setCommission(delta) { try { await AdminApi.setCommission(delta); render(); } catch (e) { notify(e.message); } }
 async function setSurge(delta) { try { await AdminApi.setSurge(delta); render(); } catch (e) { notify(e.message); } }
+
+/* ---- Live map tab ---- */
+let adminLiveMap = null;
+const adminLiveMapMarkers = {};
+function liveMapTab() {
+  setTimeout(initAdminLiveMap, 0);
+  if (!state.liveMapRides.length) {
+    return '<div class="card" style="height:60vh;display:flex;align-items:center;justify-content:center"><div class="empty-state"><h2>No rides in progress</h2><p>Dispatched and active rides will appear here on the map.</p></div></div>';
+  }
+  return `<div class="card" style="padding:0;overflow:hidden"><div id="adminLiveMapEl" style="height:70vh"></div></div>`;
+}
+function initAdminLiveMap() {
+  const el = document.getElementById('adminLiveMapEl');
+  if (!el || !window.L) return;
+  if (!adminLiveMap) {
+    adminLiveMap = L.map('adminLiveMapEl');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(adminLiveMap);
+  }
+  Object.values(adminLiveMapMarkers).forEach((m) => adminLiveMap.removeLayer(m));
+  Object.keys(adminLiveMapMarkers).forEach((k) => delete adminLiveMapMarkers[k]);
+  const bounds = [];
+  state.liveMapRides.forEach((r) => {
+    const dp = r.driver && r.driver.driver_profile;
+    if (dp && dp.last_lat && dp.last_lng) {
+      const pos = [+dp.last_lat, +dp.last_lng];
+      adminLiveMapMarkers['d' + r.id] = L.marker(pos, { icon: L.divIcon({ className: '', html: `<div style="width:26px;height:26px;border-radius:50%;background:#e3b24c;border:3px solid #2a1305;display:flex;align-items:center;justify-content:center;font-size:13px">🚗</div>`, iconSize: [26, 26] }) })
+        .addTo(adminLiveMap).bindPopup(`<b>${r.driver.name}</b><br>${r.customer ? r.customer.name : ''}<br>${r.pickup_address} → ${r.drop_address}<br>Status: ${r.status}`);
+      bounds.push(pos);
+    }
+    if (r.pickup_lat && r.pickup_lng) bounds.push([+r.pickup_lat, +r.pickup_lng]);
+  });
+  if (bounds.length) adminLiveMap.fitBounds(bounds, { padding: [40, 40] });
+  else adminLiveMap.setView([31.5204, 74.3587], 12);
+}
+
+/* ---- Categories tab ---- */
+function categoriesTab() {
+  const cats = state.settings.fare_settings || [];
+  return `<div class="grid grid-2">
+    <div class="card">
+      <h3>Add a category</h3>
+      <div class="field"><label>CATEGORY KEY</label><input id="newCatKey" placeholder="e.g. bike"></div>
+      <div class="field"><label>LABEL</label><input id="newCatLabel" placeholder="e.g. Bike Delivery"></div>
+      <div class="grid grid-3">
+        <div class="field"><label>BASE FARE</label><input id="newCatBase" type="number" value="80"></div>
+        <div class="field"><label>PER KM</label><input id="newCatPerKm" type="number" value="20"></div>
+        <div class="field"><label>ETA (MIN)</label><input id="newCatEta" type="number" value="5"></div>
+      </div>
+      <button class="btn-primary" onclick="createCategory()">Add category</button>
+    </div>
+    <div class="card"><h3>Existing categories</h3><table class="data-table"><thead><tr><th>Category</th><th>Base</th><th>Per km</th><th>Status</th><th></th></tr></thead><tbody>
+      ${cats.map((c) => `<tr>
+        <td data-label="Category"><b>${c.label}</b><br><small style="color:var(--muted)">${c.category}</small></td>
+        <td data-label="Base">PKR ${c.base_fare}</td>
+        <td data-label="Per km">PKR ${c.per_km_rate}</td>
+        <td data-label="Status"><span class="badge ${c.active ? 'on' : 'off'}">${c.active ? 'Active' : 'Disabled'}</span></td>
+        <td data-label=""><button class="link-btn" onclick="toggleCategoryActive(${c.id},${c.active})">${c.active ? 'Disable' : 'Enable'}</button><button class="link-btn danger" onclick="deleteCategory(${c.id})">Delete</button></td>
+      </tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px">No categories yet.</td></tr>'}
+    </tbody></table></div>
+  </div>`;
+}
+async function createCategory() {
+  const category = ($('newCatKey').value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const label = ($('newCatLabel').value || '').trim();
+  const base_fare = +$('newCatBase').value || 0;
+  const per_km_rate = +$('newCatPerKm').value || 0;
+  const eta_minutes = +$('newCatEta').value || 5;
+  if (!category || !label) return notify('Enter a category key and label');
+  try {
+    await AdminApi.createCategory({ category, label, base_fare, per_km_rate, eta_minutes });
+    notify(`${label} added`);
+    render();
+  } catch (e) { notify(e.message); }
+}
+async function toggleCategoryActive(id, active) {
+  try { await AdminApi.updateCategory(id, { active: !active }); render(); } catch (e) { notify(e.message); }
+}
+async function deleteCategory(id) {
+  try { await AdminApi.deleteCategory(id); notify('Category removed'); render(); } catch (e) { notify(e.message); }
+}
+function $(id) { return document.getElementById(id); }
+
+/* ---- Withdrawals tab ---- */
+function withdrawalsTab() {
+  if (!state.withdrawals.length) return '<div class="empty-state"><h2>No withdrawal requests</h2><p>Driver withdrawal requests will appear here.</p></div>';
+  return `<div class="card"><table class="data-table"><thead><tr><th>Driver</th><th>Amount</th><th>Status</th><th>Requested</th><th></th></tr></thead><tbody>
+    ${state.withdrawals.map((w) => `<tr>
+      <td data-label="Driver"><b>${w.driver ? w.driver.name : '—'}</b><br><small style="color:var(--muted)">${w.driver ? w.driver.phone : ''}</small></td>
+      <td data-label="Amount">PKR ${w.amount.toLocaleString()}</td>
+      <td data-label="Status"><span class="badge ${w.status === 'approved' ? 'on' : w.status === 'rejected' ? 'off' : ''}" style="${w.status === 'pending' ? 'background:#e3b24c22;color:var(--accent)' : ''}">${w.status}</span></td>
+      <td data-label="Requested">${new Date(w.created_at).toLocaleString()}</td>
+      <td data-label="">${w.status === 'pending' ? `<button class="link-btn" onclick="approveWithdrawal(${w.id})">Approve</button><button class="link-btn danger" onclick="rejectWithdrawal(${w.id})">Reject</button>` : ''}</td>
+    </tr>`).join('')}
+  </tbody></table></div>`;
+}
+async function approveWithdrawal(id) { try { await AdminApi.approveWithdrawal(id); notify('Withdrawal approved'); render(); } catch (e) { notify(e.message); } }
+async function rejectWithdrawal(id) { try { await AdminApi.rejectWithdrawal(id); notify('Withdrawal rejected and refunded to wallet'); render(); } catch (e) { notify(e.message); } }
+
+/* ---- Complaints tab ---- */
+function complaintsTab() {
+  if (!state.complaints.length) return '<div class="empty-state"><h2>No complaints</h2><p>Support messages from riders and drivers will appear here.</p></div>';
+  return state.complaints.map((c) => `<div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><b style="font-size:14px">${c.subject}</b><br><small style="color:var(--muted)">${c.user ? c.user.name : ''} (${c.user ? c.user.role : ''})${c.ride ? ' · ' + c.ride.pickup_address + ' → ' + c.ride.drop_address : ''}</small></div>
+      <span class="badge ${c.status === 'resolved' ? 'on' : 'off'}">${c.status}</span>
+    </div>
+    <p class="muted" style="margin:10px 0">${c.message}</p>
+    ${c.admin_note ? `<p style="font-size:12px;color:var(--ink)"><b>Reply:</b> ${c.admin_note}</p>` : ''}
+    ${c.status === 'open' ? `<button class="link-btn" onclick="resolveComplaintPrompt(${c.id})">Reply &amp; resolve</button>` : ''}
+  </div>`).join('');
+}
+async function resolveComplaintPrompt(id) {
+  const note = prompt('Reply to this complaint (sent to the user, marks it resolved):');
+  if (note === null) return;
+  try { await AdminApi.resolveComplaint(id, note); notify('Complaint resolved'); render(); } catch (e) { notify(e.message); }
+}
+
+/* ---- Reports tab ---- */
+function reportsTab() {
+  const rev = state.revenueReport;
+  const rides = (state.reportRides && state.reportRides.data) || [];
+  const f = state.reportFilters;
+  return `<div class="grid grid-3">
+    <div class="card stat-card"><small>COMPLETED RIDES</small><b>${rev ? rev.total_rides : '—'}</b></div>
+    <div class="card stat-card"><small>TOTAL FARE COLLECTED</small><b>PKR ${rev ? rev.total_fare_collected.toLocaleString() : '—'}</b></div>
+    <div class="card stat-card"><small>PLATFORM COMMISSION</small><b>PKR ${rev ? rev.total_commission.toLocaleString() : '—'}</b></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3>Filter ride history</h3>
+    <div class="grid grid-3">
+      <div class="field"><label>STATUS</label><select id="repStatus" onchange="setReportFilter('status',this.value)">
+        <option value="">Any</option>
+        ${['pending_dispatch', 'dispatched', 'accepted', 'arriving', 'arrived', 'in_progress', 'completed', 'rated', 'cancelled'].map((s) => `<option value="${s}" ${f.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>FROM</label><input type="date" id="repFrom" value="${f.from}" onchange="setReportFilter('from',this.value)"></div>
+      <div class="field"><label>TO</label><input type="date" id="repTo" value="${f.to}" onchange="setReportFilter('to',this.value)"></div>
+    </div>
+    <table class="data-table"><thead><tr><th>Route</th><th>Category</th><th>Fare</th><th>Status</th><th>Date</th></tr></thead><tbody>
+      ${rides.map((r) => `<tr>
+        <td data-label="Route">${r.pickup_address} → ${r.drop_address}</td>
+        <td data-label="Category">${r.category}</td>
+        <td data-label="Fare">PKR ${r.final_fare || r.calculated_fare}</td>
+        <td data-label="Status"><span class="badge ${['completed', 'rated'].includes(r.status) ? 'on' : 'off'}">${r.status}</span></td>
+        <td data-label="Date">${new Date(r.created_at).toLocaleDateString()}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px">No rides match these filters.</td></tr>'}
+    </tbody></table>
+  </div>`;
+}
+function setReportFilter(key, value) { state.reportFilters[key] = value; save(); AdminApi.loadReportRides().then(render).catch((e) => notify(e.message)); }
 
 /* ---- Root render ---- */
 function render() {

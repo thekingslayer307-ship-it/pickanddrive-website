@@ -6,14 +6,21 @@ const API_BASE = 'https://api.pickanddrive.pk/api/v1';
 const KEY = 'pickanddrive-app-v1';
 const GOOGLE_CLIENT_ID = ''; // TODO: fill in once a Google Cloud OAuth client exists
 
-const CATS = [
+const CAT_ICONS = { bike: '🏍', economy: '🚗', city: '🚘', premium: '🚙', family: '🚐', school: '🏫' };
+let CATS = [
   { id: 'bike', icon: '🏍', name: 'Bike' },
   { id: 'economy', icon: '🚗', name: 'Economy' },
   { id: 'city', icon: '🚘', name: 'City' },
   { id: 'premium', icon: '🚙', name: 'Premium' },
   { id: 'family', icon: '🚐', name: 'Family' },
   { id: 'school', icon: '🏫', name: 'School' },
-];
+]; // overwritten by loadCategories() with the admin-configured list once logged in
+async function loadCategories() {
+  try {
+    const cats = await apiRequest('/categories');
+    if (cats && cats.length) CATS = cats.map(c => ({ id: c.category, icon: CAT_ICONS[c.category] || '🚗', name: c.label || c.category }));
+  } catch (e) { /* keep fallback list */ }
+}
 
 function seedState() {
   return {
@@ -21,8 +28,8 @@ function seedState() {
     screen: 'login',
     phone: '', otp: ['', '', '', ''], otpTimer: 0,
     pickup: null, drop: null, dropQuery: '', dropResults: [],
-    category: 'city', fareEstimate: null,
-    activeRide: null,
+    category: 'city', fareEstimate: null, paymentMethod: 'cash',
+    activeRide: null, rideHistory: [], complaints: [], complaintRideId: null,
     driverTab: 'home', driverOnline: false, incomingRide: null, earnings: null, wallet: null, documents: [],
     rating: 0,
     chatOpen: false, chatMessages: [],
@@ -141,6 +148,7 @@ function finishLogin(res) {
   state.token = res.token; state.user = res.user; state.role = res.user.role;
   persist();
   toast(`Welcome, ${res.user.name}`);
+  loadCategories();
   if (state.role === 'driver') { goto('driverHome'); startPolling(); }
   else { goto('customerHome'); startPolling(); }
 }
@@ -283,6 +291,7 @@ async function bookRide() {
         category: state.category,
         pickup_address: state.pickup.address, pickup_lat: state.pickup.lat, pickup_lng: state.pickup.lng,
         drop_address: state.drop.address, drop_lat: state.drop.lat, drop_lng: state.drop.lng,
+        payment_method: state.paymentMethod,
       },
     });
     state.activeRide = ride;
@@ -472,6 +481,10 @@ function scCustomerHome() {
     <div class="cat-row">${CATS.map(c => `<div class="cat-item ${state.category === c.id ? 'sel' : ''}" onclick="selectCategory('${c.id}')"><div class="cat-icon">${c.icon}</div><div class="cat-name">${c.name}</div></div>`).join('')}</div>
     <div class="spacer"></div>
     <button class="btn" onclick="goto('search')">Book a ride</button>
+    <div class="btn-row">
+      <button class="btn outline" style="flex:1" onclick="openHistory()">🕒 Ride history</button>
+      <button class="btn outline" style="flex:1" onclick="openSupport()">🎧 Support</button>
+    </div>
   </div>`;
 }
 function scSearch() {
@@ -512,11 +525,17 @@ function scConfirm() {
     <div class="back" onclick="goto('route')">← Confirm booking</div>
     <div class="field"><span class="dot g"></span><span class="txt">${state.pickup.address}</span></div>
     <div class="field"><span class="dot k"></span><span class="txt">${state.drop.address}</span></div>
+    <div class="field-label">Payment method</div>
+    <div class="btn-row">
+      <button class="btn ${state.paymentMethod === 'cash' ? '' : 'outline'}" style="flex:1" onclick="setPaymentMethod('cash')">💵 Cash</button>
+      <button class="btn ${state.paymentMethod === 'online' ? '' : 'outline'}" style="flex:1" onclick="setPaymentMethod('online')">💳 Online</button>
+    </div>
     <p class="p-sub">Your booking goes to our dispatch team, who assign the closest available driver — this usually takes under a minute.</p>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px"><span class="p-sub">Fare</span><span class="p-title" style="font-size:22px">PKR ${est.calculated_fare}</span></div>
     <button class="btn" onclick="bookRide()">Confirm booking</button>
   </div>`;
 }
+function setPaymentMethod(m) { state.paymentMethod = m; refresh(); }
 /* ---- Live map (Leaflet + OSM tiles) ---- */
 function initLiveMap(ride) {
   const el = $('liveMapEl');
@@ -666,6 +685,77 @@ function scRate() {
   </div>`;
 }
 
+/* ---- Ride history ---- */
+async function openHistory() {
+  goto('history');
+  try {
+    const page = await apiRequest('/rides/mine/history');
+    state.rideHistory = page.data || page;
+  } catch (e) { toast(e.message); }
+  refresh();
+}
+function scHistory() {
+  const statusLabel = { completed: 'Completed', rated: 'Completed', cancelled: 'Cancelled' };
+  const rows = state.rideHistory.map(r => `<div class="card2" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:13px">${r.pickup_address.split(',')[0]} → ${r.drop_address.split(',')[0]}</b><span class="pill">${statusLabel[r.status] || r.status}</span></div>
+    <div class="p-sub" style="margin-top:6px">${new Date(r.created_at).toLocaleDateString()} · PKR ${r.final_fare || r.calculated_fare} · ${r.payment_method}</div>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn outline" style="flex:1;padding:9px;font-size:11px" onclick="openComplaintForRide(${r.id})">Report an issue</button>
+      ${r.payment_method === 'online' && r.payment_status === 'paid' ? `<button class="btn outline" style="flex:1;padding:9px;font-size:11px" onclick="requestRideRefund(${r.id})">Request refund</button>` : ''}
+    </div>
+  </div>`).join('') || '<div class="empty2"><h2>No past rides yet</h2><p>Your completed and cancelled rides will show up here.</p></div>';
+  return `<div class="p-pad">
+    <div class="back" onclick="goto('customerHome')">← Ride history</div>
+    <div style="overflow-y:auto">${rows}</div>
+  </div>`;
+}
+async function requestRideRefund(rideId) {
+  try {
+    await apiRequest(`/rides/${rideId}/refund-request`, { method: 'POST' });
+    toast('Refund requested — our team will review it');
+    openHistory();
+  } catch (e) { toast(e.message); }
+}
+
+/* ---- Support / complaints ---- */
+function openComplaintForRide(rideId) { state.complaintRideId = rideId; goto('support'); }
+async function openSupport() {
+  state.complaintRideId = null;
+  goto('support');
+  try { state.complaints = await apiRequest('/complaints/mine'); } catch (e) {}
+  refresh();
+}
+async function submitComplaint() {
+  const subject = ($('complaintSubject') && $('complaintSubject').value || '').trim();
+  const message = ($('complaintMessage') && $('complaintMessage').value || '').trim();
+  if (!subject || !message) return toast('Enter a subject and message');
+  try {
+    await apiRequest('/complaints', { method: 'POST', body: { subject, message, ride_id: state.complaintRideId } });
+    toast('Sent — our team will get back to you');
+    state.complaintRideId = null;
+    openSupport();
+  } catch (e) { toast(e.message); }
+}
+function scSupport() {
+  const statusLabel = { open: 'Open', resolved: 'Resolved' };
+  const list = state.complaints.map(c => `<div class="card2" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:13px">${c.subject}</b><span class="pill">${statusLabel[c.status]}</span></div>
+    <p class="p-sub" style="margin-top:6px">${c.message}</p>
+    ${c.admin_note ? `<p class="p-sub" style="margin-top:6px;color:var(--ink)"><b>Our reply:</b> ${c.admin_note}</p>` : ''}
+  </div>`).join('') || '<p class="p-sub">No previous messages.</p>';
+  return `<div class="p-pad">
+    <div class="back" onclick="goto('customerHome')">← Support</div>
+    ${state.complaintRideId ? `<p class="p-sub">Reporting an issue for ride #${state.complaintRideId}</p>` : ''}
+    <div class="field-label">Subject</div>
+    <input class="field-input" id="complaintSubject" placeholder="What's this about?">
+    <div class="field-label">Message</div>
+    <input class="field-input" id="complaintMessage" placeholder="Tell us what happened">
+    <button class="btn" onclick="submitComplaint()">Send to our team</button>
+    <div class="field-label" style="margin-top:14px">Previous messages</div>
+    ${list}
+  </div>`;
+}
+
 /* ---- Screens: driver ---- */
 function scDriverHome() {
   const ride = state.incomingRide;
@@ -740,7 +830,7 @@ function scDriverDocuments() {
    back steps through in-app screens rather than exiting the app. */
 function screenBack() {
   if (state.chatOpen) { closeChat(); return true; }
-  const map = { otp: 'login', driverSignup: 'login', search: 'customerHome', route: 'search', confirm: 'route' };
+  const map = { otp: 'login', driverSignup: 'login', search: 'customerHome', route: 'search', confirm: 'route', history: 'customerHome', support: 'customerHome' };
   if (map[state.screen]) { goto(map[state.screen]); return true; }
   if (state.role === 'driver' && state.driverTab !== 'home') { loadDriverTab('home'); return true; }
   return false;
@@ -765,6 +855,7 @@ const SCREENS = {
   login: scLogin, otp: scOtp, driverSignup: scDriverSignup,
   customerHome: scCustomerHome, search: scSearch, route: scRoute, confirm: scConfirm,
   waiting: scWaiting, tracking: scTracking, rate: scRate,
+  history: scHistory, support: scSupport,
 };
 function render() {
   const root = $('root');
@@ -790,6 +881,7 @@ if (state.token) {
   state.screen = state.role === 'driver' ? 'driverHome' : 'customerHome';
   render();
   startPolling();
+  loadCategories();
 } else {
   render();
 }
