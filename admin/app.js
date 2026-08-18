@@ -197,6 +197,10 @@ const AdminApi = {
     await apiRequest('/admin/settings', { method: 'PATCH', body: { surge_multiplier: next } });
     await AdminApi.refreshAll();
   },
+  async setSafetyContact(number) {
+    await apiRequest('/admin/settings', { method: 'PATCH', body: { safety_contact_number: number } });
+    await AdminApi.refreshAll();
+  },
 };
 
 /* ---- Icons (inline, no external deps) ---- */
@@ -524,10 +528,21 @@ function commissionTab() {
     <div class="card commission-hero"><small>SURGE MULTIPLIER</small><h2>${state.settings.surge_multiplier}×</h2><div class="stepper-row"><button onclick="setSurge(-0.1)">−0.1</button><button onclick="setSurge(0.1)">+0.1</button></div></div>
     <div class="card stat-card"><small>TOTAL COMMISSION COLLECTED</small><b>PKR ${(state.settings.total_commission_collected || 0).toLocaleString()}</b><span>Across all completed rides</span></div>
   </div>
-  <div class="card" style="margin-top:14px"><p class="muted">Commission is applied automatically to every completed ride before it's added to the driver's wallet. Surge is shown to riders as a badge and folded into the suggested fare above 1×.</p></div>`;
+  <div class="card" style="margin-top:14px"><p class="muted">Commission is applied automatically to every completed ride before it's added to the driver's wallet. Surge is shown to riders as a badge and folded into the suggested fare above 1×.</p></div>
+  <div class="card" style="margin-top:14px">
+    <h3>SOS safety contact number</h3>
+    <p class="muted">The number a rider's SOS button dials directly. This is a phone shortcut, not a monitored live emergency line — defaults to Pakistan's national emergency number (1122) unless changed.</p>
+    <div class="field" style="max-width:240px"><label>NUMBER</label><input id="safetyContactInput" value="${state.settings.safety_contact_number || '1122'}"></div>
+    <button class="pill-btn gold" onclick="saveSafetyContact()">Save</button>
+  </div>`;
 }
 async function setCommission(delta) { try { await AdminApi.setCommission(delta); render(); } catch (e) { notify(e.message); } }
 async function setSurge(delta) { try { await AdminApi.setSurge(delta); render(); } catch (e) { notify(e.message); } }
+async function saveSafetyContact() {
+  const number = (document.getElementById('safetyContactInput').value || '').trim();
+  if (!number) return notify('Enter a phone number');
+  try { await AdminApi.setSafetyContact(number); notify('Safety contact number updated'); render(); } catch (e) { notify(e.message); }
+}
 
 /* ---- Live map tab ---- */
 let adminLiveMap = null;

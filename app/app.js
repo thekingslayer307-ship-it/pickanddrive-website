@@ -21,6 +21,10 @@ async function loadCategories() {
     if (cats && cats.length) CATS = cats.map(c => ({ id: c.category, icon: CAT_ICONS[c.category] || '🚗', name: c.label || c.category }));
   } catch (e) { /* keep fallback list */ }
 }
+let safetyContactNumber = '1122';
+async function loadSafetyContact() {
+  try { const res = await apiRequest('/safety-contact'); if (res && res.number) safetyContactNumber = res.number; } catch (e) {}
+}
 
 function seedState() {
   return {
@@ -148,7 +152,7 @@ function finishLogin(res) {
   state.token = res.token; state.user = res.user; state.role = res.user.role;
   persist();
   toast(`Welcome, ${res.user.name}`);
-  loadCategories();
+  loadCategories(); loadSafetyContact();
   if (state.role === 'driver') { goto('driverHome'); startPolling(); }
   else { goto('customerHome'); startPolling(); }
 }
@@ -618,14 +622,17 @@ function shareTrip() {
     toast(text);
   }
 }
-async function triggerSos() {
+function triggerSos() {
   const ride = state.activeRide;
   if (!ride) return;
-  if (!confirm('Send an SOS alert to our safety team right now?')) return;
-  try {
-    await apiRequest(`/rides/${ride.id}/sos`, { method: 'POST' });
-    toast('Alert sent — our team has been notified');
-  } catch (e) { toast(e.message); }
+  const ok = confirm(
+    `This will call ${safetyContactNumber}.\n\n` +
+    `Pick&Drive does not monitor rides live — for a real emergency, this call is the fastest way to get help. ` +
+    `We will also flag this trip to our team afterward.`
+  );
+  if (!ok) return;
+  apiRequest(`/rides/${ride.id}/sos`, { method: 'POST' }).catch(() => {}); // best-effort trip flag, not the safety response itself
+  window.location.href = 'tel:' + safetyContactNumber;
 }
 
 function rideStatusSteps(status) {
@@ -668,6 +675,7 @@ function scTracking() {
       <button onclick="shareTrip()">📍 Share trip</button>
       <button class="sos" onclick="triggerSos()">🆘 SOS</button>
     </div>
+    <p class="p-sub" style="text-align:center;font-size:10.5px">SOS calls ${safetyContactNumber} directly — not a monitored live safety line.</p>
     <div class="spacer"></div>
     <div class="link" onclick="cancelActiveRide()">Cancel trip</div>
   </div>`;
@@ -881,7 +889,7 @@ if (state.token) {
   state.screen = state.role === 'driver' ? 'driverHome' : 'customerHome';
   render();
   startPolling();
-  loadCategories();
+  loadCategories(); loadSafetyContact();
 } else {
   render();
 }
