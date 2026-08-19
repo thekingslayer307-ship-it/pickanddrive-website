@@ -32,7 +32,7 @@ function seedState() {
     screen: 'login',
     phone: '', otp: ['', '', '', ''], otpTimer: 0,
     pickup: null, drop: null, dropQuery: '', dropResults: [],
-    category: 'city', fareEstimate: null, paymentMethod: 'cash',
+    category: 'city', fareEstimate: null, paymentMethod: 'cash', pickerTarget: null,
     activeRide: null, rideHistory: [], complaints: [], complaintRideId: null,
     driverTab: 'home', driverOnline: false, incomingRide: null, earnings: null, wallet: null, documents: [],
     rating: 0,
@@ -85,14 +85,21 @@ async function apiUpload(path, formData) {
   return data;
 }
 
-async function geocodeSearch(query) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=pk&q=${encodeURIComponent(query)}`;
+async function geocodeSearch(query, near) {
+  let url = `https://nominatim.openstreetmap.org/search?format=json&limit=8&countrycodes=pk&accept-language=en&q=${encodeURIComponent(query)}`;
+  if (near && near.lat && near.lng) {
+    // Soft bias toward the user's current area (a ~0.9° box, ~100km) — ranks nearby matches
+    // first without excluding real matches elsewhere, which is what was scattering results
+    // "from all over Pakistan" for anyone typing a common place/street name.
+    const d = 0.45;
+    url += `&viewbox=${near.lng - d},${near.lat + d},${near.lng + d},${near.lat - d}&bounded=0`;
+  }
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) return [];
   return res.json();
 }
 async function reverseGeocode(lat, lng) {
-  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&accept-language=en&lat=${lat}&lon=${lng}`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) return null;
   return res.json();
@@ -187,6 +194,7 @@ function logout() {
   stopChatPolling();
   stopLocationBroadcast();
   if (liveMap) { liveMap.remove(); liveMap = null; liveMapMarker = null; liveMapRideId = null; }
+  teardownPickerMap();
   state = seedState();
   persist();
   render();
@@ -237,19 +245,93 @@ async function pollTick() {
 /* ---- Customer: booking flow ---- */
 function goto(screen) { state.screen = screen; render(); }
 
-async function useCurrentLocation() {
+/* ---- Interactive map picker (pickup + drop-off) ---- */
+let pickerMap = null;
+let pickerMapMoveEndHandler = null;
+let suppressNextMoveEnd = false;
+let pickerGeoWatchDone = false;
+
+function enterSearchScreen() {
+  if (!state.pickerTarget) state.pickerTarget = state.pickup ? 'drop' : 'pickup';
+  goto('search');
+  setTimeout(() => initPickerMap(), 0);
+}
+function leaveSearchScreen(nextScreen) {
+  teardownPickerMap();
+  if (nextScreen === 'route') {
+    state.fareEstimate = null;
+    goto('route');
+    if (state.pickup) selectCategory(state.category);
+  } else {
+    goto(nextScreen);
+  }
+}
+function teardownPickerMap() {
+  if (pickerMap) { pickerMap.remove(); pickerMap = null; }
+}
+function initPickerMap() {
+  const el = $('pickerMapEl');
+  if (!el || !window.L || pickerMap) return;
+  const known = state.pickup || state.drop;
+  const start = known || { lat: 31.5204, lng: 74.3656 }; // Lahore, used only until we get a real GPS fix
+  pickerMap = L.map('pickerMapEl', { zoomControl: false, attributionControl: false }).setView([start.lat, start.lng], known ? 15 : 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(pickerMap);
+  pickerMapMoveEndHandler = () => onPickerMapMoveEnd();
+  pickerMap.on('moveend', pickerMapMoveEndHandler);
+  if (!known && navigator.geolocation) {
+    pickerGeoWatchDone = false;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      pickerGeoWatchDone = true;
+      if (pickerMap) pickerMap.setView([pos.coords.latitude, pos.coords.longitude], 16);
+    }, () => { pickerGeoWatchDone = true; }, { enableHighAccuracy: true, timeout: 8000 });
+  } else {
+    onPickerMapMoveEnd(); // resolve an address for the initial center right away
+  }
+}
+async function onPickerMapMoveEnd() {
+  if (suppressNextMoveEnd) { suppressNextMoveEnd = false; return; }
+  if (!pickerMap) return;
+  const c = pickerMap.getCenter();
+  const target = state.pickerTarget;
+  try {
+    const r = await reverseGeocode(c.lat, c.lng);
+    const address = r && r.display_name ? r.display_name.split(',').slice(0, 3).join(',') : `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`;
+    state[target] = { address, lat: c.lat, lng: c.lng };
+  } catch (e) {
+    state[target] = { address: `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`, lat: c.lat, lng: c.lng };
+  }
+  patchPickerHeader();
+}
+function setPickerTarget(target) {
+  if (state.pickerTarget === target) return;
+  state.pickerTarget = target;
+  patchPickerHeader();
+  const loc = state[target];
+  if (loc && pickerMap) { suppressNextMoveEnd = false; pickerMap.setView([loc.lat, loc.lng], Math.max(pickerMap.getZoom(), 15)); }
+}
+function centerMapOnMyLocation() {
   if (!navigator.geolocation) return toast('Location not available on this device');
   toast('Getting your location…');
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    const { latitude, longitude } = pos.coords;
-    let label = 'Current location';
-    try {
-      const r = await reverseGeocode(latitude, longitude);
-      if (r && r.display_name) label = r.display_name.split(',').slice(0, 2).join(',');
-    } catch (e) {}
-    state.pickup = { address: label, lat: latitude, lng: longitude };
-    render();
+  navigator.geolocation.getCurrentPosition((pos) => {
+    if (pickerMap) pickerMap.setView([pos.coords.latitude, pos.coords.longitude], 16);
   }, () => toast('Could not get your location — enable GPS and try again'), { enableHighAccuracy: true, timeout: 10000 });
+}
+function renderPickerFields() {
+  return `
+    <div class="picker-field ${state.pickerTarget === 'pickup' ? 'active' : ''}" onclick="setPickerTarget('pickup')">
+      <span class="dot g"></span><span class="txt">${state.pickup ? state.pickup.address : 'Set pickup point'}</span>
+      ${state.pickerTarget === 'pickup' ? '<span class="tag">● on map</span>' : ''}
+    </div>
+    <div class="picker-field ${state.pickerTarget === 'drop' ? 'active' : ''}" onclick="setPickerTarget('drop')">
+      <span class="dot k"></span><span class="txt">${state.drop ? state.drop.address : 'Set drop-off point'}</span>
+      ${state.pickerTarget === 'drop' ? '<span class="tag">● on map</span>' : ''}
+    </div>`;
+}
+function patchPickerHeader() {
+  const el = $('pickerHeaderFields');
+  if (el) el.innerHTML = renderPickerFields();
+  const btn = $('pickerFooterBtn');
+  if (btn) btn.disabled = !(state.pickup && state.drop);
 }
 
 let dropDebounce = null;
@@ -263,7 +345,8 @@ function onDropInput(v) {
   if (v.trim().length < 3) { state.dropResults = []; renderDropSuggestionsInPlace(); return; }
   dropDebounce = setTimeout(async () => {
     try {
-      const results = await geocodeSearch(v);
+      const near = state.pickup || state.drop || (pickerMap ? pickerMap.getCenter() : null);
+      const results = await geocodeSearch(v, near);
       state.dropResults = results.map(r => ({ label: r.display_name, lat: +r.lat, lng: +r.lon }));
     } catch (e) { state.dropResults = []; }
     renderDropSuggestionsInPlace();
@@ -271,11 +354,13 @@ function onDropInput(v) {
 }
 function pickDrop(i) {
   const r = state.dropResults[i];
-  state.drop = { address: r.label.split(',').slice(0, 3).join(','), lat: r.lat, lng: r.lng };
-  state.dropResults = [];
-  state.fareEstimate = null;
-  goto('route');
-  if (state.pickup) selectCategory(state.category); // auto-fetch the estimate for the already-selected category
+  const address = r.label.split(',').slice(0, 3).join(',');
+  state[state.pickerTarget] = { address, lat: r.lat, lng: r.lng };
+  state.dropQuery = ''; state.dropResults = [];
+  const input = $('dropInput'); if (input) input.value = '';
+  renderDropSuggestionsInPlace();
+  patchPickerHeader();
+  if (pickerMap) { suppressNextMoveEnd = true; pickerMap.setView([r.lat, r.lng], 16); }
 }
 
 async function selectCategory(id) {
@@ -490,11 +575,11 @@ function scOtp() {
 function scCustomerHome() {
   return `<div class="p-pad" style="gap:14px">
     <div class="topbar2"><span class="brandmark">🔑 Pick&amp;Drive</span><span class="link" onclick="logout()">Sign out</span></div>
-    <div class="field" onclick="goto('search')"><span class="dot k"></span><span class="txt muted">Where to?</span><span>🔍</span></div>
+    <div class="field" onclick="enterSearchScreen()"><span class="dot k"></span><span class="txt muted">Where to?</span><span>🔍</span></div>
     <div class="field-label">Ride category</div>
     <div class="cat-row">${CATS.map(c => `<div class="cat-item ${state.category === c.id ? 'sel' : ''}" onclick="selectCategory('${c.id}')"><div class="cat-icon">${c.icon}</div><div class="cat-name">${c.name}</div></div>`).join('')}</div>
     <div class="spacer"></div>
-    <button class="btn" onclick="goto('search')">Book a ride</button>
+    <button class="btn" onclick="enterSearchScreen()">Book a ride</button>
     <div class="btn-row">
       <button class="btn outline" style="flex:1" onclick="openHistory()">🕒 Ride history</button>
       <button class="btn outline" style="flex:1" onclick="openSupport()">🎧 Support</button>
@@ -505,18 +590,29 @@ function renderDropSuggestions() {
   return state.dropResults.map((r, i) => `<div class="sugg" onclick="pickDrop(${i})"><span class="ico">📍</span><div><div class="t">${r.label.split(',')[0]}</div><div class="s">${r.label.split(',').slice(1, 3).join(',')}</div></div></div>`).join('');
 }
 function scSearch() {
-  return `<div class="p-pad">
-    <div class="back" onclick="goto('customerHome')">← Set your route</div>
-    <div class="field" onclick="useCurrentLocation()"><span class="dot g"></span><span class="txt">${state.pickup ? state.pickup.address : 'Use current location'}</span></div>
-    <input class="field-input" id="dropInput" placeholder="Search drop-off address…" value="${state.dropQuery}" oninput="onDropInput(this.value)">
-    <div id="dropSuggestions">${renderDropSuggestions()}</div>
-    ${!state.pickup ? '<p class="p-sub">Tap the location field above to set your pickup point.</p>' : ''}
+  return `<div class="picker-screen">
+    <div class="picker-header">
+      <div class="back" onclick="leaveSearchScreen('customerHome')">← Set your route</div>
+      <div id="pickerHeaderFields">${renderPickerFields()}</div>
+      <div class="picker-search-wrap">
+        <input class="field-input" id="dropInput" placeholder="Search for a place or address…" value="${state.dropQuery}" oninput="onDropInput(this.value)">
+        <div class="picker-suggestions" id="dropSuggestions">${renderDropSuggestions()}</div>
+      </div>
+    </div>
+    <div class="picker-map-area">
+      <div id="pickerMapEl" style="position:absolute;inset:0"></div>
+      <div class="center-pin-wrap"><div class="pin-icon">📍</div><div class="pin-shadow"></div></div>
+      <button class="locate-fab" onclick="centerMapOnMyLocation()" aria-label="Use my location">🎯</button>
+    </div>
+    <div class="picker-footer">
+      <button class="btn" id="pickerFooterBtn" ${(state.pickup && state.drop) ? '' : 'disabled'} onclick="leaveSearchScreen('route')">Continue</button>
+    </div>
   </div>`;
 }
 function scRoute() {
   const est = state.fareEstimate;
   return `<div class="p-pad">
-    <div class="back" onclick="goto('search')">← Route &amp; fare</div>
+    <div class="back" onclick="enterSearchScreen()">← Route &amp; fare</div>
     <div class="field"><span class="dot g"></span><span class="txt">${state.pickup ? state.pickup.address : '—'}</span></div>
     <div class="field"><span class="dot k"></span><span class="txt">${state.drop ? state.drop.address : '—'}</span></div>
     <div class="field-label">Vehicle</div>
@@ -850,7 +946,9 @@ function scDriverDocuments() {
    back steps through in-app screens rather than exiting the app. */
 function screenBack() {
   if (state.chatOpen) { closeChat(); return true; }
-  const map = { otp: 'login', driverSignup: 'login', search: 'customerHome', route: 'search', confirm: 'route', history: 'customerHome', support: 'customerHome' };
+  if (state.screen === 'search') { leaveSearchScreen('customerHome'); return true; }
+  if (state.screen === 'route') { enterSearchScreen(); return true; }
+  const map = { otp: 'login', driverSignup: 'login', confirm: 'route', history: 'customerHome', support: 'customerHome' };
   if (map[state.screen]) { goto(map[state.screen]); return true; }
   if (state.role === 'driver' && state.driverTab !== 'home') { loadDriverTab('home'); return true; }
   return false;
@@ -889,6 +987,7 @@ function render() {
   if (state.screen === 'otp') { const f = $('otp0'); if (f) f.focus(); }
   if (state.screen === 'login') mountGoogleButton();
   if (state.screen === 'tracking' && state.activeRide) setTimeout(() => initLiveMap(state.activeRide), 0);
+  if (state.screen === 'search') setTimeout(() => initPickerMap(), 0);
   scrollChatToBottom();
 }
 function scrollChatToBottom() {
