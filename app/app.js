@@ -29,7 +29,7 @@ async function loadSafetyContact() {
 function seedState() {
   return {
     token: null, role: null, user: null,
-    screen: 'login',
+    screen: 'welcome',
     phone: '', otp: ['', '', '', ''], otpTimer: 0,
     pickup: null, drop: null, dropQuery: '', dropResults: [],
     category: 'city', fareEstimate: null, paymentMethod: 'cash', pickerTarget: null,
@@ -423,6 +423,9 @@ async function toggleOnline() {
     const p = await apiRequest('/driver/status', { method: 'POST', body: { online: !state.driverOnline } });
     state.driverOnline = !!p.online;
     persist();
+    // Broadcast location as soon as a driver goes online — not just once they accept a
+    // ride — otherwise dispatch has no way to see where available drivers currently are.
+    if (state.driverOnline) startLocationBroadcast(); else stopLocationBroadcast();
     refresh();
   } catch (e) { toast(e.message); }
 }
@@ -460,7 +463,11 @@ async function advanceRideStatus() {
   try {
     const ride = await apiRequest(`/driver/rides/${state.activeRide.id}/status`, { method: 'PATCH' });
     state.activeRide = ride;
-    if (ride.status === 'completed') { stopLocationBroadcast(); toast('Trip completed'); state.activeRide = null; state.driverTab = 'home'; goto('driverHome'); }
+    if (ride.status === 'completed') {
+      toast('Trip completed'); state.activeRide = null; state.driverTab = 'home'; goto('driverHome');
+      // Still online and available for the next dispatch — keep broadcasting rather than going dark.
+      if (state.driverOnline) startLocationBroadcast(); else stopLocationBroadcast();
+    }
     else refresh();
   } catch (e) { toast(e.message); }
 }
@@ -526,12 +533,25 @@ function otpKey(i, ev) {
 }
 
 /* ---- Screens: shared ---- */
+function scWelcome() {
+  return `<div class="p-pad welcome-pad">
+    <div class="spacer"></div>
+    <div class="welcome-hero">🔑</div>
+    <div class="welcome-brand">Pick&amp;Drive</div>
+    <div class="p-sub" style="text-align:center;font-size:13.5px">Book a ride across the city — fast, safe, and simple.</div>
+    <div class="spacer"></div>
+    <button class="btn" onclick="goto('login')">Sign in</button>
+    <button class="btn outline" onclick="goto('login')">Create an account</button>
+    <div class="link" style="align-self:center;margin-top:6px" onclick="goto('driverSignup')">Drive with us — register as a driver</div>
+  </div>`;
+}
 function scLogin() {
   return `<div class="p-pad">
+    <div class="back" onclick="goto('welcome')">← Back</div>
     <div class="spacer"></div>
     <div class="brandmark">🔑 Pick&amp;Drive</div>
     <div class="p-title">Welcome</div>
-    <div class="p-sub">Enter your mobile number to continue</div>
+    <div class="p-sub">Enter your mobile number — we'll sign you in, or set up a new account if you're new here</div>
     <div><div class="field-label">Mobile Number</div>
     <input class="field-input" id="phoneInput" type="tel" inputmode="numeric" placeholder="0300 1234567" maxlength="11"></div>
     <button class="btn" onclick="requestOtp()">Send OTP</button>
@@ -542,7 +562,7 @@ function scLogin() {
 }
 function scDriverSignup() {
   return `<div class="p-pad">
-    <div class="back" onclick="goto('login')">← Back</div>
+    <div class="back" onclick="goto('welcome')">← Back</div>
     <div class="p-title">Become a driver</div>
     <div class="p-sub">Submit your details — our team reviews every application before you can go online.</div>
     <div class="field-label">Full name</div>
@@ -948,7 +968,7 @@ function screenBack() {
   if (state.chatOpen) { closeChat(); return true; }
   if (state.screen === 'search') { leaveSearchScreen('customerHome'); return true; }
   if (state.screen === 'route') { enterSearchScreen(); return true; }
-  const map = { otp: 'login', driverSignup: 'login', confirm: 'route', history: 'customerHome', support: 'customerHome' };
+  const map = { login: 'welcome', otp: 'login', driverSignup: 'welcome', confirm: 'route', history: 'customerHome', support: 'customerHome' };
   if (map[state.screen]) { goto(map[state.screen]); return true; }
   if (state.role === 'driver' && state.driverTab !== 'home') { loadDriverTab('home'); return true; }
   return false;
@@ -970,7 +990,7 @@ function driverShell() {
   </div>`;
 }
 const SCREENS = {
-  login: scLogin, otp: scOtp, driverSignup: scDriverSignup,
+  welcome: scWelcome, login: scLogin, otp: scOtp, driverSignup: scDriverSignup,
   customerHome: scCustomerHome, search: scSearch, route: scRoute, confirm: scConfirm,
   waiting: scWaiting, tracking: scTracking, rate: scRate,
   history: scHistory, support: scSupport,
@@ -982,8 +1002,8 @@ function render() {
     scrollChatToBottom();
     return;
   }
-  if (state.token && state.screen === 'login') state.screen = 'customerHome';
-  root.innerHTML = (SCREENS[state.screen] || scLogin)() + (state.chatOpen && state.activeRide ? chatOverlay() : '');
+  if (state.token && (state.screen === 'login' || state.screen === 'welcome')) state.screen = 'customerHome';
+  root.innerHTML = (SCREENS[state.screen] || scWelcome)() + (state.chatOpen && state.activeRide ? chatOverlay() : '');
   if (state.screen === 'otp') { const f = $('otp0'); if (f) f.focus(); }
   if (state.screen === 'login') mountGoogleButton();
   if (state.screen === 'tracking' && state.activeRide) setTimeout(() => initLiveMap(state.activeRide), 0);
@@ -996,11 +1016,24 @@ function scrollChatToBottom() {
 }
 function refresh() { render(); }
 
+async function restoreDriverSession() {
+  // The app can be reloaded mid-trip (backgrounded and killed by Android, a manual
+  // reopen, etc.) — state.activeRide only ever lived in memory, so without this the
+  // driver's location silently stops broadcasting for the rest of that ride and their
+  // marker freezes on the customer's tracking map. Re-sync from the server on boot.
+  try {
+    const ride = await apiRequest('/driver/rides/active');
+    if (ride && ride.id) { state.activeRide = ride; refresh(); }
+  } catch (e) { /* ignore */ }
+  if (state.activeRide || state.driverOnline) startLocationBroadcast();
+}
+
 if (state.token) {
   state.screen = state.role === 'driver' ? 'driverHome' : 'customerHome';
   render();
   startPolling();
   loadCategories(); loadSafetyContact();
+  if (state.role === 'driver') restoreDriverSession();
 } else {
   render();
 }

@@ -20,7 +20,7 @@ function seedState() {
     settings: { commission_rate: 0.15, surge_multiplier: 1, total_commission_collected: 0, fare_settings: [] },
     notifications: [], notifPanelOpen: false,
     withdrawals: [], complaints: [],
-    liveMapRides: [],
+    liveMapRides: [], liveMapOnlineDrivers: [],
     reportRides: { data: [] }, revenueReport: null, reportFilters: { status: '', category: '', from: '', to: '' },
   };
 }
@@ -123,7 +123,9 @@ const AdminApi = {
     save();
   },
   async loadLiveMap() {
-    state.liveMapRides = await apiRequest('/admin/live-map');
+    const res = await apiRequest('/admin/live-map');
+    state.liveMapRides = res.rides || [];
+    state.liveMapOnlineDrivers = res.online_drivers || [];
     save();
   },
   async assignDriver(rideId, driverId) {
@@ -549,8 +551,8 @@ let adminLiveMap = null;
 const adminLiveMapMarkers = {};
 function liveMapTab() {
   setTimeout(initAdminLiveMap, 0);
-  if (!state.liveMapRides.length) {
-    return '<div class="card" style="height:60vh;display:flex;align-items:center;justify-content:center"><div class="empty-state"><h2>No rides in progress</h2><p>Dispatched and active rides will appear here on the map.</p></div></div>';
+  if (!state.liveMapRides.length && !state.liveMapOnlineDrivers.length) {
+    return '<div class="card" style="height:60vh;display:flex;align-items:center;justify-content:center"><div class="empty-state"><h2>No drivers online</h2><p>Online drivers and active rides will appear here on the map.</p></div></div>';
   }
   return `<div class="card" style="padding:0;overflow:hidden"><div id="adminLiveMapEl" style="height:70vh"></div></div>`;
 }
@@ -573,6 +575,18 @@ function initAdminLiveMap() {
       bounds.push(pos);
     }
     if (r.pickup_lat && r.pickup_lng) bounds.push([+r.pickup_lat, +r.pickup_lng]);
+  });
+  // Idle online drivers — not on a ride, but need to be visible so dispatch can pick
+  // the nearest one when a new fare comes in. Green pin distinguishes "available" from
+  // the gold "busy" car icon above.
+  state.liveMapOnlineDrivers.forEach((d) => {
+    const dp = d.driver_profile;
+    if (dp && dp.last_lat && dp.last_lng) {
+      const pos = [+dp.last_lat, +dp.last_lng];
+      adminLiveMapMarkers['o' + d.id] = L.marker(pos, { icon: L.divIcon({ className: '', html: `<div style="width:22px;height:22px;border-radius:50%;background:#4c8b5d;border:3px solid #1f3d26;display:flex;align-items:center;justify-content:center;font-size:11px">🟢</div>`, iconSize: [22, 22] }) })
+        .addTo(adminLiveMap).bindPopup(`<b>${d.name}</b><br>Online — available<br>${dp.vehicle_model || ''} ${dp.plate_number || ''}`);
+      bounds.push(pos);
+    }
   });
   if (bounds.length) adminLiveMap.fitBounds(bounds, { padding: [40, 40] });
   else adminLiveMap.setView([31.5204, 74.3587], 12);

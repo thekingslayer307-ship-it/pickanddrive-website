@@ -17,6 +17,10 @@ body{margin:0;background:var(--page);font-family:"Plus Jakarta Sans",-apple-syst
 .spacer{flex:1}
 .back{font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;width:fit-content;display:flex;align-items:center;gap:5px}
 
+.welcome-pad{gap:14px}
+.welcome-hero{align-self:center;width:88px;height:88px;border-radius:26px;background:linear-gradient(135deg,var(--gold),var(--gold-deep));display:flex;align-items:center;justify-content:center;font-size:40px;box-shadow:0 10px 24px rgba(180,132,42,.32);margin-bottom:4px}
+.welcome-brand{align-self:center;font-family:"Fraunces",serif;font-weight:600;font-size:30px;letter-spacing:-.01em}
+
 .field-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 input.field-input{width:100%;border:none;background:var(--fill);border-radius:13px;padding:14px 15px;font-size:15px;font-weight:600;color:var(--ink);font-family:inherit;outline:none}
 input.field-input:focus{box-shadow:0 0 0 2.5px var(--gold);background:#fff}
