@@ -476,6 +476,7 @@ async function loadDriverTab(tab) {
   try {
     if (tab === 'earnings') { state.earnings = await apiRequest('/driver/earnings'); state.wallet = await apiRequest('/driver/wallet'); }
     if (tab === 'documents') { state.documents = await apiRequest('/driver/documents'); }
+    if (tab === 'settings') { state.user = { ...state.user, ...(await apiRequest('/auth/me')) }; persist(); }
   } catch (e) { toast(e.message); }
   refresh();
 }
@@ -943,6 +944,47 @@ function scDriverEarnings() {
   </div>`;
 }
 
+function scDriverSettings() {
+  const u = state.user || {};
+  const dp = u.driver_profile || {};
+  return `<div class="p-pad" style="gap:14px">
+    <div class="p-title">Settings</div>
+    <div class="card2">
+      <div class="field-label">Full name</div>
+      <input class="field-input" id="settingsName" value="${u.name || ''}">
+      <div class="field-label" style="margin-top:10px">Vehicle</div>
+      <input class="field-input" id="settingsVehicle" value="${dp.vehicle_model || ''}">
+      <div class="field-label" style="margin-top:10px">Plate number</div>
+      <input class="field-input" id="settingsPlate" value="${dp.plate_number || ''}">
+      <button class="btn" style="margin-top:12px" onclick="saveDriverProfile()">Save changes</button>
+    </div>
+    <div class="card2">
+      <div class="field-label">Mobile number</div>
+      <div class="p-title" style="font-size:15px">${u.phone || ''}</div>
+      <p class="p-sub" style="margin-top:4px">Contact support to change the number linked to your account.</p>
+    </div>
+    <div class="card2">
+      <div class="field-label">Rating</div>
+      <div class="p-title" style="font-size:15px">⭐ ${u.rating || '—'}</div>
+    </div>
+    <p class="p-sub">Your account is secured by phone verification — there's no password to manage.</p>
+    <button class="btn outline" onclick="logout()">Sign out</button>
+    <div class="spacer"></div>
+  </div>`;
+}
+async function saveDriverProfile() {
+  const name = ($('settingsName') && $('settingsName').value || '').trim();
+  const vehicle_model = ($('settingsVehicle') && $('settingsVehicle').value || '').trim();
+  const plate_number = ($('settingsPlate') && $('settingsPlate').value || '').trim();
+  if (!name) return toast('Name cannot be empty');
+  try {
+    const res = await apiRequest('/auth/profile', { method: 'PATCH', body: { name, vehicle_model, plate_number } });
+    state.user = { ...state.user, ...res };
+    persist();
+    toast('Profile updated');
+    refresh();
+  } catch (e) { toast(e.message); }
+}
 function scDriverDocuments() {
   const statusLabel = { pending: 'Pending review', verified: 'Verified', rejected: 'Rejected — re-upload' };
   return `<div class="p-pad" style="gap:14px">
@@ -979,6 +1021,7 @@ window.screenBack = screenBack;
 function tabContent() {
   if (state.driverTab === 'earnings') return scDriverEarnings();
   if (state.driverTab === 'documents') return scDriverDocuments();
+  if (state.driverTab === 'settings') return scDriverSettings();
   return scDriverHome();
 }
 function driverShell() {
@@ -987,6 +1030,7 @@ function driverShell() {
     <button class="${state.driverTab === 'home' ? 'active' : ''}" onclick="loadDriverTab('home')">🚦<span>Home</span></button>
     <button class="${state.driverTab === 'documents' ? 'active' : ''}" onclick="loadDriverTab('documents')">📄<span>Documents</span></button>
     <button class="${state.driverTab === 'earnings' ? 'active' : ''}" onclick="loadDriverTab('earnings')">💰<span>Earnings</span></button>
+    <button class="${state.driverTab === 'settings' ? 'active' : ''}" onclick="loadDriverTab('settings')">⚙️<span>Settings</span></button>
   </div>`;
 }
 const SCREENS = {
