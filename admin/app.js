@@ -68,50 +68,54 @@ const AdminApi = {
     const data = await apiRequest('/auth/google', { method: 'POST', body: { id_token: idToken } });
     return { token: data.token, name: data.user.name };
   },
-  async refreshAll() {
-    const [queue, drivers, customers, coupons, announcements, settings, withdrawals, complaints] = await Promise.all([
-      apiRequest('/admin/dispatch/queue'),
-      apiRequest('/admin/drivers'),
-      apiRequest('/admin/customers'),
-      apiRequest('/admin/coupons'),
-      apiRequest('/admin/announcements'),
-      apiRequest('/admin/settings'),
-      apiRequest('/admin/withdrawals'),
-      apiRequest('/admin/complaints'),
-    ]);
-    state.dispatch = queue;
-    state.drivers = drivers;
-    state.customers = customers;
-    state.coupons = coupons;
-    state.announcements = announcements;
-    state.settings = settings;
-    state.withdrawals = withdrawals;
-    state.complaints = complaints;
+  /** Refresh only the slices an action actually invalidated. Every action used to await a full
+   *  8-endpoint reload before the UI moved at all, which is what made the console feel like it
+   *  hung for a moment after every click. */
+  async refresh(...keys) {
+    const SLICES = {
+      dispatch: ['/admin/dispatch/queue', (v) => { state.dispatch = v; }],
+      drivers: ['/admin/drivers', (v) => { state.drivers = v; }],
+      customers: ['/admin/customers', (v) => { state.customers = v; }],
+      coupons: ['/admin/coupons', (v) => { state.coupons = v; }],
+      announcements: ['/admin/announcements', (v) => { state.announcements = v; }],
+      settings: ['/admin/settings', (v) => { state.settings = v; }],
+      withdrawals: ['/admin/withdrawals', (v) => { state.withdrawals = v; }],
+      complaints: ['/admin/complaints', (v) => { state.complaints = v; }],
+    };
+    const wanted = keys.length ? keys : Object.keys(SLICES);
+    await Promise.all(wanted.map(async (k) => {
+      const slice = SLICES[k];
+      if (!slice) return;
+      slice[1](await apiRequest(slice[0]));
+    }));
     save();
+  },
+  async refreshAll() {
+    await AdminApi.refresh();
   },
   async createCategory(body) {
     await apiRequest('/admin/settings/fare', { method: 'POST', body });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('settings');
   },
   async updateCategory(id, body) {
     await apiRequest(`/admin/settings/fare/${id}`, { method: 'PATCH', body });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('settings');
   },
   async deleteCategory(id) {
     await apiRequest(`/admin/settings/fare/${id}`, { method: 'DELETE' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('settings');
   },
   async approveWithdrawal(id) {
     await apiRequest(`/admin/withdrawals/${id}/approve`, { method: 'POST' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('withdrawals', 'drivers');
   },
   async rejectWithdrawal(id) {
     await apiRequest(`/admin/withdrawals/${id}/reject`, { method: 'POST' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('withdrawals', 'drivers');
   },
   async resolveComplaint(id, adminNote) {
     await apiRequest(`/admin/complaints/${id}/resolve`, { method: 'POST', body: { admin_note: adminNote } });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('complaints');
   },
   async loadReportRides() {
     const f = state.reportFilters;
@@ -131,15 +135,15 @@ const AdminApi = {
   },
   async assignDriver(rideId, driverId) {
     await apiRequest(`/admin/rides/${rideId}/assign`, { method: 'POST', body: { driver_id: driverId } });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('dispatch', 'drivers');
   },
   async reassign(rideId) {
     await apiRequest(`/admin/rides/${rideId}/reassign`, { method: 'POST' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('dispatch', 'drivers');
   },
   async cancelRide(rideId) {
     await apiRequest(`/admin/rides/${rideId}/cancel`, { method: 'POST' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('dispatch');
   },
   async toggleDriverOnline(id) {
     const d = state.drivers.find((x) => x.id === id);
@@ -150,31 +154,31 @@ const AdminApi = {
   },
   async issuePenalty(id) {
     await apiRequest(`/admin/drivers/${id}/penalty`, { method: 'POST', body: { reason: 'Penalty issued from admin console' } });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('drivers');
   },
   async approveDriver(id) {
     await apiRequest(`/admin/drivers/${id}/approve`, { method: 'POST' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('drivers');
   },
   async suspendDriver(id) {
     await apiRequest(`/admin/drivers/${id}/suspend`, { method: 'POST' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('drivers');
   },
   async verifyDocument(docId, status) {
     await apiRequest(`/admin/documents/${docId}/verify`, { method: 'POST', body: { status } });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('drivers');
   },
   async toggleBlacklist(key, blocked) {
     await apiRequest(`/admin/customers/${key}/${blocked ? 'unblock' : 'block'}`, { method: 'POST' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('customers');
   },
   async updateCustomer(id, body) {
     await apiRequest(`/admin/customers/${id}`, { method: 'PATCH', body });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('customers');
   },
   async updateDriver(id, body) {
     await apiRequest(`/admin/drivers/${id}`, { method: 'PATCH', body });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('drivers');
   },
   async loadEntityRides(type, id) {
     const res = await apiRequest(`/admin/rides?${type}_id=${id}`);
@@ -184,37 +188,37 @@ const AdminApi = {
     const c = state.coupons.find((x) => x.code === code);
     if (!c) return;
     await apiRequest(`/admin/coupons/${c.id}/toggle`, { method: 'POST' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('coupons');
   },
   async createCoupon(code, discount, type) {
     if (state.coupons.some((c) => c.code === code)) return false;
     await apiRequest('/admin/coupons', { method: 'POST', body: { code, discount, type } });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('coupons');
     return true;
   },
   async deleteCoupon(code) {
     const c = state.coupons.find((x) => x.code === code);
     if (!c) return;
     await apiRequest(`/admin/coupons/${c.id}`, { method: 'DELETE' });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('coupons');
   },
   async broadcastAnnouncement(title, body) {
     await apiRequest('/admin/announcements', { method: 'POST', body: { title, body } });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('announcements');
   },
   async setCommission(delta) {
     const next = Math.max(0, Math.min(0.4, +(state.settings.commission_rate + delta).toFixed(2)));
     await apiRequest('/admin/settings', { method: 'PATCH', body: { commission_rate: next } });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('settings');
   },
   async setSurge(delta) {
     const next = Math.max(1, Math.min(2.5, +(state.settings.surge_multiplier + delta).toFixed(1)));
     await apiRequest('/admin/settings', { method: 'PATCH', body: { surge_multiplier: next } });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('settings');
   },
   async setSafetyContact(number) {
     await apiRequest('/admin/settings', { method: 'PATCH', body: { safety_contact_number: number } });
-    await AdminApi.refreshAll();
+    await AdminApi.refresh('settings');
   },
 };
 

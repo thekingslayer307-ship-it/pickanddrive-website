@@ -85,24 +85,55 @@ async function apiUpload(path, formData) {
   return data;
 }
 
-async function geocodeSearch(query, near) {
-  let url = `https://nominatim.openstreetmap.org/search?format=json&limit=8&countrycodes=pk&accept-language=en&q=${encodeURIComponent(query)}`;
-  if (near && near.lat && near.lng) {
-    // Soft bias toward the user's current area (a ~0.9° box, ~100km) — ranks nearby matches
-    // first without excluding real matches elsewhere, which is what was scattering results
-    // "from all over Pakistan" for anyone typing a common place/street name.
-    const d = 0.45;
-    url += `&viewbox=${near.lng - d},${near.lat + d},${near.lng + d},${near.lat - d}&bounded=0`;
-  }
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) return [];
-  return res.json();
+/* Photon (OSM data, free, no API key) rather than Nominatim: Nominatim does exact-token
+   matching only, so a single typo returns *zero* results — searching "Aitchsion college"
+   found nothing while "Aitchison college" worked. Photon is built for autocomplete and
+   tolerates misspellings, which is what riders actually type. */
+const PAKISTAN_BBOX = '60.8,23.6,77.8,37.1'; // minLon,minLat,maxLon,maxLat — keeps foreign matches out
+
+function photonLabel(p) {
+  const primary = p.name
+    || [p.housenumber, p.street].filter(Boolean).join(' ')
+    || p.district || p.city || 'Unnamed place';
+  const rest = [];
+  if (p.street && p.street !== primary) rest.push(p.street);
+  if (p.district && p.district !== primary) rest.push(p.district);
+  if (p.city && p.city !== primary && p.city !== p.district) rest.push(p.city);
+  if (!rest.length && p.county) rest.push(p.county);
+  return rest.length ? `${primary}, ${rest.slice(0, 2).join(', ')}` : primary;
 }
+
+/** Returns [{label, lat, lng}] — normalized so call sites never touch the raw provider shape. */
+async function geocodeSearch(query, near) {
+  let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=8&lang=en&bbox=${PAKISTAN_BBOX}`;
+  // Ranks results near the rider first; bbox above still keeps everything inside Pakistan.
+  if (near && near.lat && near.lng) url += `&lat=${near.lat}&lon=${near.lng}`;
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.features || [])
+      .filter(f => f.geometry && f.geometry.coordinates)
+      .map(f => ({
+        label: photonLabel(f.properties || {}),
+        lat: f.geometry.coordinates[1],
+        lng: f.geometry.coordinates[0],
+      }));
+  } catch (e) {
+    return [];
+  }
+}
+
 async function reverseGeocode(lat, lng) {
-  const url = `https://nominatim.openstreetmap.org/reverse?format=json&accept-language=en&lat=${lat}&lon=${lng}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) return null;
-  return res.json();
+  try {
+    const res = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en`, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const f = (data.features || [])[0];
+    return f ? { display_name: photonLabel(f.properties || {}) } : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 /* ---- Auth ---- */
@@ -225,7 +256,9 @@ async function pollTick() {
       }
       const statusChanged = !state.activeRide || state.activeRide.status !== ride.status;
       state.activeRide = ride;
-      if (ride.status === 'completed') { goto('rate'); return; }
+      // Only navigate on the transition, not every poll — re-rendering underneath someone
+      // mid-rating would fight their taps.
+      if (ride.status === 'completed') { if (state.screen !== 'rate') goto('rate'); return; }
       if (['pending_dispatch', 'dispatched'].includes(ride.status) && !['confirm', 'rate'].includes(state.screen)) state.screen = 'waiting';
       if (['accepted', 'arriving', 'arrived', 'in_progress'].includes(ride.status)) state.screen = 'tracking';
       if (statusChanged) {
@@ -342,15 +375,16 @@ function renderDropSuggestionsInPlace() {
 function onDropInput(v) {
   state.dropQuery = v;
   clearTimeout(dropDebounce);
-  if (v.trim().length < 3) { state.dropResults = []; renderDropSuggestionsInPlace(); return; }
+  if (v.trim().length < 2) { state.dropResults = []; renderDropSuggestionsInPlace(); return; }
+  // 250ms: Photon is an autocomplete engine and answers fast, so results keep pace with typing
+  // the way riders expect. The old 550ms felt like the search had stalled.
   dropDebounce = setTimeout(async () => {
     try {
       const near = state.pickup || state.drop || (pickerMap ? pickerMap.getCenter() : null);
-      const results = await geocodeSearch(v, near);
-      state.dropResults = results.map(r => ({ label: r.display_name, lat: +r.lat, lng: +r.lon }));
+      state.dropResults = await geocodeSearch(v, near);
     } catch (e) { state.dropResults = []; }
     renderDropSuggestionsInPlace();
-  }, 550);
+  }, 250);
 }
 function pickDrop(i) {
   const r = state.dropResults[i];
@@ -535,31 +569,47 @@ function otpKey(i, ev) {
 
 /* ---- Screens: shared ---- */
 function scWelcome() {
-  return `<div class="p-pad welcome-pad">
+  return `<div class="brand-bg"><div class="p-pad" style="gap:0">
     <div class="spacer"></div>
-    <div class="welcome-hero">🔑</div>
-    <div class="welcome-brand">Pick&amp;Drive</div>
-    <div class="p-sub" style="text-align:center;font-size:13.5px">Book a ride across the city — fast, safe, and simple.</div>
-    <div class="spacer"></div>
-    <button class="btn" onclick="goto('login')">Sign in</button>
-    <button class="btn outline" onclick="goto('login')">Create an account</button>
-    <div class="link" style="align-self:center;margin-top:6px" onclick="goto('driverSignup')">Drive with us — register as a driver</div>
-  </div>`;
+    <img class="logo-lockup" src="assets/logo.png" alt="Pick&amp;Drive">
+    <p class="welcome-tagline">Book a ride across Pakistan — a real driver, a fixed fare, no haggling.</p>
+    <div class="trust-row">
+      <span>🛡 Verified drivers</span>
+      <span>💳 Fixed fares</span>
+      <span>🆘 In-trip safety</span>
+    </div>
+    <div class="spacer" style="flex:.62"></div>
+    <div class="welcome-actions">
+      <button class="btn" onclick="goto('login')">Sign in</button>
+      <button class="btn outline" onclick="goto('login')">Create an account</button>
+      <div class="link" style="margin-top:8px" onclick="goto('driverSignup')">Drive with us — register as a driver</div>
+    </div>
+  </div></div>`;
 }
 function scLogin() {
-  return `<div class="p-pad">
+  return `<div class="brand-bg"><div class="p-pad" style="gap:14px">
     <div class="back" onclick="goto('welcome')">← Back</div>
     <div class="spacer"></div>
-    <div class="brandmark">🔑 Pick&amp;Drive</div>
-    <div class="p-title">Welcome</div>
-    <div class="p-sub">Enter your mobile number — we'll sign you in, or set up a new account if you're new here</div>
-    <div><div class="field-label">Mobile Number</div>
-    <input class="field-input" id="phoneInput" type="tel" inputmode="numeric" placeholder="0300 1234567" maxlength="11"></div>
-    <button class="btn" onclick="requestOtp()">Send OTP</button>
-    ${(inNativeApp || GOOGLE_CLIENT_ID) ? `<div class="p-sub" style="text-align:center;margin:14px 0 2px">or</div><div id="googleBtn" style="display:flex;justify-content:center"></div>` : ''}
-    <div class="link" onclick="goto('driverSignup')">Drive with us — register as a driver</div>
+    <div class="auth-card">
+      <div class="auth-head">
+        <img class="logo-mark" src="assets/logo.png" alt="Pick&amp;Drive">
+        <h2>Welcome back</h2>
+        <p>Enter your mobile number and we'll text you a code. New here? Your account is created automatically.</p>
+      </div>
+      <div>
+        <div class="field-label" style="margin-bottom:6px">Mobile number</div>
+        <label class="phone-field">
+          <span class="cc">+92</span>
+          <input id="phoneInput" type="tel" inputmode="numeric" placeholder="300 1234567" maxlength="11" autocomplete="tel">
+        </label>
+      </div>
+      <button class="btn" onclick="requestOtp()">Send OTP</button>
+      ${(inNativeApp || GOOGLE_CLIENT_ID) ? `<div class="auth-divider">or</div><div id="googleBtn" style="display:flex;justify-content:center"></div>` : ''}
+      <div class="link" onclick="goto('driverSignup')">Drive with us — register as a driver</div>
+    </div>
     <div class="spacer"></div>
-  </div>`;
+    <p class="auth-foot">By continuing you agree to our Terms and Privacy Policy.</p>
+  </div></div>`;
 }
 function scDriverSignup() {
   return `<div class="p-pad">
@@ -670,6 +720,44 @@ function scConfirm() {
 }
 function setPaymentMethod(m) { state.paymentMethod = m; refresh(); }
 /* ---- Live map (Leaflet + OSM tiles) ---- */
+/** Straight-line km between two points. Road distance is longer, so the ETA below is
+ *  deliberately conservative rather than promising a precision we can't deliver. */
+function haversineKm(aLat, aLng, bLat, bLng) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function driverPositionOf(ride) {
+  const dp = ride && ride.driver && ride.driver.driver_profile;
+  if (!dp || dp.last_lat == null || dp.last_lng == null) return null;
+  return { lat: +dp.last_lat, lng: +dp.last_lng };
+}
+
+/** Distance + rough ETA from the driver to whichever point matters at this stage of the trip:
+ *  the pickup while they're on their way, the destination once the rider is aboard. */
+function driverProximity(ride) {
+  const pos = driverPositionOf(ride);
+  if (!pos) return null;
+  const enRouteToDrop = ride.status === 'in_progress';
+  const target = enRouteToDrop
+    ? { lat: +ride.drop_lat, lng: +ride.drop_lng }
+    : { lat: +ride.pickup_lat, lng: +ride.pickup_lng };
+  const km = haversineKm(pos.lat, pos.lng, target.lat, target.lng);
+  const minutes = Math.max(1, Math.round((km / 22) * 60)); // ~22km/h average city speed
+  return { km, minutes, toDropoff: enRouteToDrop };
+}
+
+function renderProximityLine(ride) {
+  const p = driverProximity(ride);
+  if (!p) return `<span class="prox-muted">Waiting for driver location…</span>`;
+  const dist = p.km < 1 ? `${Math.round(p.km * 1000)} m` : `${p.km.toFixed(1)} km`;
+  return `<b>${dist}</b> away · about <b>${p.minutes} min</b> ${p.toDropoff ? 'to destination' : 'to your pickup'}`;
+}
+
 function initLiveMap(ride) {
   const el = $('liveMapEl');
   if (!el || !window.L) return;
@@ -678,22 +766,33 @@ function initLiveMap(ride) {
   liveMapRideId = ride.id;
   const pickup = [+ride.pickup_lat, +ride.pickup_lng];
   const drop = [+ride.drop_lat, +ride.drop_lng];
-  liveMap = L.map('liveMapEl', { zoomControl: false, attributionControl: false }).fitBounds([pickup, drop], { padding: [30, 30] });
+  liveMap = L.map('liveMapEl', { zoomControl: false, attributionControl: false }).fitBounds([pickup, drop], { padding: [36, 36] });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(liveMap);
+  L.polyline([pickup, drop], { color: '#B4842A', weight: 4, opacity: .75 }).addTo(liveMap);
   L.marker(pickup, { icon: L.divIcon({ className: '', html: '<div class="pin-marker pickup"></div>', iconSize: [14, 14] }) }).addTo(liveMap);
   L.marker(drop, { icon: L.divIcon({ className: '', html: '<div class="pin-marker drop"></div>', iconSize: [14, 14] }) }).addTo(liveMap);
-  const dp = ride.driver && ride.driver.driver_profile;
-  if (dp && dp.last_lat && dp.last_lng) {
-    liveMapMarker = L.marker([+dp.last_lat, +dp.last_lng], { icon: L.divIcon({ className: '', html: '<div class="driver-marker">🚗</div>', iconSize: [26, 26] }) }).addTo(liveMap);
+  const pos = driverPositionOf(ride);
+  if (pos) {
+    liveMapMarker = L.marker([pos.lat, pos.lng], { icon: L.divIcon({ className: '', html: '<div class="driver-marker">🚗</div>', iconSize: [26, 26] }) }).addTo(liveMap);
   }
+  // Leaflet measures its container at construction. On this screen the map is built in the same
+  // frame the markup is inserted, so it reads 0×0 and paints nothing but blank tiles — hence the
+  // empty box where the map should be. Re-measuring once layout settles is what fixes it.
+  setTimeout(() => {
+    if (!liveMap) return;
+    liveMap.invalidateSize();
+    liveMap.fitBounds(pos ? [pickup, drop, [pos.lat, pos.lng]] : [pickup, drop], { padding: [36, 36] });
+  }, 120);
 }
+
 function updateLiveMapMarker(ride) {
+  const line = $('proximityLine');
+  if (line) line.innerHTML = renderProximityLine(ride);
   if (!liveMap) return;
-  const dp = ride.driver && ride.driver.driver_profile;
-  if (!dp || !dp.last_lat || !dp.last_lng) return;
-  const pos = [+dp.last_lat, +dp.last_lng];
-  if (liveMapMarker) liveMapMarker.setLatLng(pos);
-  else liveMapMarker = L.marker(pos, { icon: L.divIcon({ className: '', html: '<div class="driver-marker">🚗</div>', iconSize: [26, 26] }) }).addTo(liveMap);
+  const pos = driverPositionOf(ride);
+  if (!pos) return;
+  if (liveMapMarker) liveMapMarker.setLatLng([pos.lat, pos.lng]);
+  else liveMapMarker = L.marker([pos.lat, pos.lng], { icon: L.divIcon({ className: '', html: '<div class="driver-marker">🚗</div>', iconSize: [26, 26] }) }).addTo(liveMap);
 }
 
 /* ---- Chat ---- */
@@ -774,32 +873,76 @@ function rideStatusSteps(status) {
     return `<div class="step-row"><div class="step-dot ${cls}">${icon}</div><div class="step-t ${cls === 'todo' ? 'todo' : ''}">${labels[s]}</div></div>`;
   }).join('');
 }
+function routeCard(ride) {
+  return `<div class="route-card">
+    <div class="route-leg">
+      <div class="rail"><b></b><s></s></div>
+      <div class="txt"><small>Pickup</small><div>${ride.pickup_address}</div></div>
+    </div>
+    <div class="route-leg">
+      <div class="rail"><b class="drop"></b></div>
+      <div class="txt"><small>Drop-off</small><div>${ride.drop_address}</div></div>
+    </div>
+    <div class="route-fare"><span>Fare</span><b>PKR ${ride.calculated_fare}</b></div>
+  </div>`;
+}
+
 function scWaiting() {
   const ride = state.activeRide;
   if (!ride || !ride.id) return `<div class="p-pad"><div class="spacer"></div><div class="spin" style="margin:0 auto"></div><div class="spacer"></div></div>`;
-  return `<div class="p-pad" style="align-items:center;text-align:center;gap:14px">
+  const assigned = ride.status === 'dispatched';
+  return `<div class="brand-bg"><div class="p-pad" style="gap:16px">
     <div class="spacer"></div>
-    <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold-deep));display:flex;align-items:center;justify-content:center;font-size:24px">🚦</div>
-    <div class="p-title">Your ride request is being processed</div>
-    <div class="p-sub">${ride.pickup_address} → ${ride.drop_address} · PKR ${ride.calculated_fare}</div>
-    <div id="stepListWrap" style="width:100%;text-align:left;background:var(--fill);border-radius:14px;padding:6px 12px">${rideStatusSteps(ride.status)}</div>
+    <div class="radar"><i></i><i></i><i></i><div class="radar-core">🚕</div></div>
+    <div style="text-align:center">
+      <div class="p-title">${assigned ? 'Confirming your driver' : 'Finding you a driver'}</div>
+      <p class="p-sub" style="margin-top:6px">${assigned
+        ? 'A driver has been assigned and is confirming your trip.'
+        : 'Our dispatch team is matching you with the nearest available driver.'}</p>
+    </div>
+    ${routeCard(ride)}
+    <div id="stepListWrap" style="width:100%;background:rgba(255,253,248,.72);border:1px solid var(--line);border-radius:16px;padding:6px 14px">${rideStatusSteps(ride.status)}</div>
     <div class="spacer"></div>
-    <div class="link" onclick="cancelActiveRide()">Cancel request</div>
-  </div>`;
+    <button class="btn outline" onclick="cancelActiveRide()">Cancel request</button>
+  </div></div>`;
 }
+
 function scTracking() {
   const ride = state.activeRide;
   if (!ride || !ride.id) return scWaiting();
   const driver = ride.driver || {};
-  return `<div class="p-pad" style="gap:12px">
-    <div class="back" onclick="goto('waiting')">Trip status</div>
-    <div id="liveMapEl" class="live-map"></div>
-    <div id="stepListWrap" style="width:100%;text-align:left;background:var(--fill);border-radius:14px;padding:6px 12px">${rideStatusSteps(ride.status)}</div>
-    <div class="driver-card">
-      <div class="driver-row2"><div class="avatar">${(driver.name || 'D').slice(0, 1)}</div><div class="driver-info"><div class="t">${driver.name || 'Your driver'}</div><div class="s">★ ${driver.rating || '—'}</div></div>
-      <button class="pill" style="margin-left:auto;border:0;cursor:pointer" onclick="openChat()">💬 Chat</button></div>
-      <div style="display:flex;justify-content:space-between;align-items:center"><span class="p-sub">Fare</span><span class="p-title" style="font-size:16px">PKR ${ride.calculated_fare}</span></div>
+  const prof = driver.driver_profile || {};
+  const initials = (driver.name || 'D').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  const vehicle = [prof.vehicle_model, prof.plate_number ? `<span class="pill-plate">${prof.plate_number}</span>` : null]
+    .filter(Boolean).join(' · ');
+  return `<div class="brand-bg"><div class="p-pad" style="gap:12px">
+    <div class="topbar2">
+      <div class="p-title" style="font-size:17px">Your trip</div>
+      <span class="pill">${(ride.status || '').replace(/_/g, ' ').toUpperCase()}</span>
     </div>
+
+    <div class="trip-map-wrap">
+      <div id="liveMapEl" class="live-map"></div>
+      <div class="eta-banner"><span class="dot"></span><span id="proximityLine">${renderProximityLine(ride)}</span></div>
+    </div>
+
+    <div class="trip-driver">
+      <div class="ava">${initials}</div>
+      <div class="who">
+        <b>${driver.name || 'Your driver'}</b>
+        <small>★ ${driver.rating || '—'}${vehicle ? ' · ' + vehicle : ''}</small>
+      </div>
+      <button class="chat-cta" onclick="openChat()">💬 Chat</button>
+    </div>
+
+    ${ride.pickup_pin ? `<div class="route-fare" style="background:rgba(255,253,248,.9);border:1px solid var(--line);border-radius:14px;padding:12px 14px;border-top:1px solid var(--line)">
+      <span>Pickup PIN — share with driver</span><b style="letter-spacing:.22em">${ride.pickup_pin}</b>
+    </div>` : ''}
+
+    ${routeCard(ride)}
+
+    <div id="stepListWrap" style="width:100%;background:rgba(255,253,248,.72);border:1px solid var(--line);border-radius:16px;padding:6px 14px">${rideStatusSteps(ride.status)}</div>
+
     <div class="safety-row">
       <button onclick="shareTrip()">📍 Share trip</button>
       <button class="sos" onclick="triggerSos()">🆘 SOS</button>
@@ -807,19 +950,48 @@ function scTracking() {
     <p class="p-sub" style="text-align:center;font-size:10.5px">SOS calls ${safetyContactNumber} directly — not a monitored live safety line.</p>
     <div class="spacer"></div>
     <div class="link" onclick="cancelActiveRide()">Cancel trip</div>
-  </div>`;
+  </div></div>`;
 }
 function scRate() {
+  const ride = state.activeRide || {};
+  const driver = ride.driver || {};
+  const prof = driver.driver_profile || {};
+  const initials = (driver.name || 'D').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const stars = [1, 2, 3, 4, 5].map(n => `<span class="${state.rating >= n ? 'on' : ''}" onclick="rateRide(${n})">★</span>`).join('');
-  return `<div class="p-pad" style="align-items:center;text-align:center;gap:12px">
+  const labels = { 1: 'Poor', 2: 'Not great', 3: 'Okay', 4: 'Good', 5: 'Excellent' };
+  return `<div class="brand-bg"><div class="p-pad" style="gap:14px">
     <div class="spacer"></div>
-    <div class="checkmark-circle">✓</div>
-    <div class="p-title">Trip completed</div>
-    <div class="p-sub">Rate your driver</div>
-    <div class="stars">${stars}</div>
+    <div style="text-align:center">
+      <div class="checkmark-circle" style="margin:0 auto">✓</div>
+      <div class="p-title" style="margin-top:12px">Trip completed</div>
+      <p class="p-sub" style="margin-top:5px">Thanks for riding with Pick&amp;Drive.</p>
+    </div>
+
+    ${driver.name ? `<div class="trip-driver">
+      <div class="ava">${initials}</div>
+      <div class="who">
+        <b>${driver.name}</b>
+        <small>${[prof.vehicle_model, prof.plate_number].filter(Boolean).join(' · ') || 'Your driver'}</small>
+      </div>
+    </div>` : ''}
+
+    ${ride.pickup_address ? routeCard({ ...ride, calculated_fare: ride.final_fare || ride.calculated_fare }) : ''}
+
+    <div style="text-align:center">
+      <div class="field-label" style="margin-bottom:8px">How was your trip?</div>
+      <div class="stars">${stars}</div>
+      <p class="p-sub" style="margin-top:8px;min-height:1.2em">${state.rating ? labels[state.rating] : 'Tap a star to rate'}</p>
+    </div>
+
     <div class="spacer"></div>
-    <button class="btn" style="width:100%" onclick="submitRating()">Submit</button>
-  </div>`;
+    <button class="btn" onclick="submitRating()" ${state.rating ? '' : 'disabled'}>${state.rating ? 'Submit rating' : 'Select a rating'}</button>
+    <div class="link" onclick="skipRating()">Skip for now</div>
+  </div></div>`;
+}
+function skipRating() {
+  state.activeRide = null; state.pickup = null; state.drop = null; state.fareEstimate = null; state.rating = 0;
+  teardownLiveMap();
+  goto('customerHome');
 }
 
 /* ---- Ride history ---- */
