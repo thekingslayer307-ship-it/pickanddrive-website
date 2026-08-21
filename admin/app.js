@@ -14,6 +14,7 @@ function seedState() {
     dispatch: { pending: [], dispatched: [] },
     drivers: [],
     expandedDriver: null,
+    detail: null,
     customers: [],
     coupons: [],
     announcements: [],
@@ -167,6 +168,18 @@ const AdminApi = {
     await apiRequest(`/admin/customers/${key}/${blocked ? 'unblock' : 'block'}`, { method: 'POST' });
     await AdminApi.refreshAll();
   },
+  async updateCustomer(id, body) {
+    await apiRequest(`/admin/customers/${id}`, { method: 'PATCH', body });
+    await AdminApi.refreshAll();
+  },
+  async updateDriver(id, body) {
+    await apiRequest(`/admin/drivers/${id}`, { method: 'PATCH', body });
+    await AdminApi.refreshAll();
+  },
+  async loadEntityRides(type, id) {
+    const res = await apiRequest(`/admin/rides?${type}_id=${id}`);
+    return res.data || [];
+  },
   async toggleCoupon(code) {
     const c = state.coupons.find((x) => x.code === code);
     if (!c) return;
@@ -226,6 +239,7 @@ const ICONS = {
   image: '<rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
   bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"/><path d="M10 21h4"/>',
   inbox: '<path d="m22 12-4 0-2 3h-8l-2-3-4 0"/><path d="M5.5 5.5h13l3.5 6.5v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-7l3.5-6.5Z"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
 };
 function icon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
@@ -363,6 +377,7 @@ function shell() {
       ${topbar()}
       <div class="content">${tabContent()}</div>
     </main>
+    ${detailModal()}
   </div>`;
 }
 function topbar() {
@@ -428,7 +443,7 @@ function driversTab() {
   return `<div class="card"><table class="data-table"><thead><tr><th>Driver</th><th>Account</th><th>Online</th><th>Rating</th><th>Strikes</th><th></th></tr></thead><tbody>
     ${state.drivers.map((d) => { const p = d.driver_profile || {}; const docs = d.driver_documents || [];
       const accountBadge = d.status === 'active' ? '<span class="badge on">Active</span>' : d.status === 'suspended' ? '<span class="badge off">Suspended</span>' : '<span class="badge warn">Pending approval</span>';
-      return `<tr>
+      return `<tr class="clickable" onclick="openDetail('driver',${d.id})">
       <td data-label="Driver"><div class="table-driver">${avatarChip(d.name, d.id)}<div><b>${d.name}</b><small style="color:var(--muted)">${p.vehicle_model || '—'} · ${p.plate_number || '—'} · ${p.category || '—'}</small></div></div></td>
       <td data-label="Account">${accountBadge}</td>
       <td data-label="Online"><span class="badge ${p.online ? 'on' : 'off'}">${p.online ? 'Online' : 'Offline'}</span></td>
@@ -436,10 +451,10 @@ function driversTab() {
       <td data-label="Strikes">${p.strikes ?? 0}</td>
       <td data-label="">
         <div class="action-group">
-        <button class="link-btn" onclick="toggleDriverDocs(${d.id})">${icon('image', 12)} ${state.expandedDriver === d.id ? 'Hide' : 'Docs'} (${docs.length}/5)</button>
-        ${d.status === 'pending_approval' ? `<button class="link-btn primary" onclick="approveDriver(${d.id})">${icon('check', 12)} Approve</button>` : ''}
-        ${d.status !== 'suspended' ? `<button class="link-btn danger" onclick="suspendDriver(${d.id})">${icon('pause', 12)} Suspend</button>` : `<button class="link-btn primary" onclick="approveDriver(${d.id})">${icon('check', 12)} Reactivate</button>`}
-        <button class="link-btn" onclick="issuePenalty(${d.id})">${icon('alert', 12)} Penalty</button>
+        <button class="link-btn" onclick="event.stopPropagation();toggleDriverDocs(${d.id})">${icon('image', 12)} ${state.expandedDriver === d.id ? 'Hide' : 'Docs'} (${docs.length}/5)</button>
+        ${d.status === 'pending_approval' ? `<button class="link-btn primary" onclick="event.stopPropagation();approveDriver(${d.id})">${icon('check', 12)} Approve</button>` : ''}
+        ${d.status !== 'suspended' ? `<button class="link-btn danger" onclick="event.stopPropagation();suspendDriver(${d.id})">${icon('pause', 12)} Suspend</button>` : `<button class="link-btn primary" onclick="event.stopPropagation();approveDriver(${d.id})">${icon('check', 12)} Reactivate</button>`}
+        <button class="link-btn" onclick="event.stopPropagation();issuePenalty(${d.id})">${icon('alert', 12)} Penalty</button>
         </div>
       </td>
     </tr>
@@ -472,16 +487,141 @@ async function issuePenalty(id) { try { await AdminApi.issuePenalty(id); notify(
 function customersTab() {
   if (!state.customers.length) return `<div class="empty-state">${icon('customers', 40)}<h2>No customers yet</h2><p>Rider accounts will appear here once they sign up.</p></div>`;
   return `<div class="card"><table class="data-table"><thead><tr><th>Customer</th><th>Rides</th><th>Rating</th><th>Status</th><th></th></tr></thead><tbody>
-    ${state.customers.map((c) => `<tr>
+    ${state.customers.map((c) => `<tr class="clickable" onclick="openDetail('customer',${c.id})">
       <td data-label="Customer"><div class="table-driver">${avatarChip(c.name, c.id)}<b>${c.name}</b></div></td>
       <td data-label="Rides">${c.rides}</td>
       <td data-label="Rating">${c.rating} ★</td>
       <td data-label="Status"><span class="badge ${c.blocked ? 'off' : 'on'}">${c.blocked ? 'Blocked' : 'Active'}</span></td>
-      <td data-label=""><div class="action-group"><button class="link-btn ${c.blocked ? 'primary' : 'danger'}" onclick="toggleBlacklist(${c.id},${c.blocked})">${icon(c.blocked ? 'check' : 'pause', 12)} ${c.blocked ? 'Unblock' : 'Block'}</button></div></td>
+      <td data-label=""><div class="action-group"><button class="link-btn ${c.blocked ? 'primary' : 'danger'}" onclick="event.stopPropagation();toggleBlacklist(${c.id},${c.blocked})">${icon(c.blocked ? 'check' : 'pause', 12)} ${c.blocked ? 'Unblock' : 'Block'}</button></div></td>
     </tr>`).join('')}
   </tbody></table></div>`;
 }
 async function toggleBlacklist(id, blocked) { try { await AdminApi.toggleBlacklist(id, blocked); render(); } catch (e) { notify(e.message); } }
+
+/* ---- Detail modal: click a customer/driver row to see and edit everything ---- */
+async function openDetail(type, id) {
+  state.detail = { type, id, rides: null, editing: false };
+  render();
+  try {
+    state.detail.rides = await AdminApi.loadEntityRides(type, id);
+  } catch (e) { state.detail.rides = []; }
+  if (state.detail && state.detail.id === id) render();
+}
+function closeDetail() { state.detail = null; render(); }
+function startEditDetail() { if (state.detail) { state.detail.editing = true; render(); } }
+async function saveDetail() {
+  const d = state.detail;
+  if (!d) return;
+  const name = ($('detailName') && $('detailName').value || '').trim();
+  const phone = ($('detailPhone') && $('detailPhone').value || '').trim();
+  if (!name) return notify('Name cannot be empty');
+  try {
+    if (d.type === 'customer') {
+      await AdminApi.updateCustomer(d.id, { name, phone });
+    } else {
+      const vehicle_model = ($('detailVehicle') && $('detailVehicle').value || '').trim();
+      const plate_number = ($('detailPlate') && $('detailPlate').value || '').trim();
+      await AdminApi.updateDriver(d.id, { name, phone, vehicle_model, plate_number });
+    }
+    d.editing = false;
+    notify('Saved');
+    render();
+  } catch (e) { notify(e.message); }
+}
+function rideMiniRow(r) {
+  const statusColor = ['completed', 'rated'].includes(r.status) ? '#7fd39a' : r.status === 'cancelled' ? '#e08a7d' : 'var(--accent)';
+  return `<div class="ride-mini-row">
+    <div class="route">${r.pickup_address} → ${r.drop_address}</div>
+    <div class="meta"><span style="color:${statusColor};text-transform:capitalize">${r.status}</span><span>PKR ${r.final_fare || r.calculated_fare} · ${new Date(r.created_at).toLocaleDateString()}</span></div>
+  </div>`;
+}
+function detailModal() {
+  const d = state.detail;
+  if (!d) return '';
+  if (d.type === 'customer') {
+    const c = state.customers.find((x) => x.id === d.id);
+    if (!c) return '';
+    return `<div class="modal-backdrop" onclick="if(event.target===this)closeDetail()"><div class="modal-panel">
+      <div class="modal-head">${avatarChip(c.name, c.id, 46)}<div><h2>${c.name}</h2><small>${c.phone || 'No phone on file'}</small></div><button class="modal-close" onclick="closeDetail()">${icon('x', 16)}</button></div>
+      <div class="modal-body">
+        <div class="modal-stat-row">
+          <div class="stat-box"><small>Rides</small><b>${c.rides}</b></div>
+          <div class="stat-box"><small>Rating</small><b>${c.rating} ★</b></div>
+          <div class="stat-box"><small>Status</small><b style="color:${c.blocked ? '#e08a7d' : '#7fd39a'}">${c.blocked ? 'Blocked' : 'Active'}</b></div>
+        </div>
+        <div class="modal-section">
+          <h4>Profile</h4>
+          ${d.editing ? `
+            <div class="field"><label>NAME</label><input id="detailName" value="${c.name}"></div>
+            <div class="field"><label>PHONE</label><input id="detailPhone" value="${c.phone || ''}"></div>
+            <button class="btn-primary" onclick="saveDetail()">Save changes</button>
+          ` : `<button class="link-btn" onclick="startEditDetail()">${icon('edit', 12)} Edit name &amp; phone</button>`}
+        </div>
+        <div class="modal-section">
+          <h4>Ride history</h4>
+          ${d.rides === null ? '<p class="muted">Loading…</p>' : (d.rides.length ? d.rides.map(rideMiniRow).join('') : '<p class="muted">No rides yet.</p>')}
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="link-btn ${c.blocked ? 'primary' : 'danger'}" style="flex:1" onclick="toggleBlacklist(${c.id},${c.blocked})">${icon(c.blocked ? 'check' : 'pause', 12)} ${c.blocked ? 'Unblock customer' : 'Block customer'}</button>
+      </div>
+    </div></div>`;
+  }
+  const dr = state.drivers.find((x) => x.id === d.id);
+  if (!dr) return '';
+  const p = dr.driver_profile || {};
+  const docs = dr.driver_documents || [];
+  return `<div class="modal-backdrop" onclick="if(event.target===this)closeDetail()"><div class="modal-panel">
+    <div class="modal-head">${avatarChip(dr.name, dr.id, 46)}<div><h2>${dr.name}</h2><small>${dr.phone || 'No phone on file'} · ${p.vehicle_model || 'No vehicle'}</small></div><button class="modal-close" onclick="closeDetail()">${icon('x', 16)}</button></div>
+    <div class="modal-body">
+      <div class="modal-stat-row">
+        <div class="stat-box"><small>Rating</small><b>${dr.rating} ★</b></div>
+        <div class="stat-box"><small>Wallet</small><b>PKR ${p.wallet_balance ?? 0}</b></div>
+        <div class="stat-box"><small>Strikes</small><b>${p.strikes ?? 0}</b></div>
+      </div>
+      <div class="modal-section">
+        <h4>Profile</h4>
+        ${d.editing ? `
+          <div class="field"><label>NAME</label><input id="detailName" value="${dr.name}"></div>
+          <div class="field"><label>PHONE</label><input id="detailPhone" value="${dr.phone || ''}"></div>
+          <div class="grid grid-2">
+            <div class="field"><label>VEHICLE</label><input id="detailVehicle" value="${p.vehicle_model || ''}"></div>
+            <div class="field"><label>PLATE</label><input id="detailPlate" value="${p.plate_number || ''}"></div>
+          </div>
+          <button class="btn-primary" onclick="saveDetail()">Save changes</button>
+        ` : `<button class="link-btn" onclick="startEditDetail()">${icon('edit', 12)} Edit profile</button>`}
+      </div>
+      <div class="modal-section">
+        <h4>Documents</h4>
+        <div class="grid grid-2" style="gap:10px">
+          ${Object.keys(DOC_LABELS).map((type) => {
+            const doc = docs.find((x) => x.type === type);
+            if (!doc) return `<div class="doc-card empty">${icon('image', 22)}<span>${DOC_LABELS[type]}</span></div>`;
+            const statusColor = doc.status === 'verified' ? '#7fd39a' : doc.status === 'rejected' ? '#e08a7d' : 'var(--accent)';
+            return `<div class="doc-card">
+              <b>${DOC_LABELS[type]}</b>
+              <a class="doc-thumb-wrap" href="https://api.pickanddrive.pk/storage/${doc.file_path}" target="_blank"><img src="https://api.pickanddrive.pk/storage/${doc.file_path}" alt=""></a>
+              <p class="doc-status" style="color:${statusColor}">${doc.status}</p>
+              <div class="doc-actions">
+                <button class="link-btn primary" onclick="verifyDoc(${doc.id},'verified')">${icon('check', 12)} Verify</button>
+                <button class="link-btn danger" onclick="verifyDoc(${doc.id},'rejected')">${icon('x', 12)} Reject</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="modal-section">
+        <h4>Ride history</h4>
+        ${d.rides === null ? '<p class="muted">Loading…</p>' : (d.rides.length ? d.rides.map(rideMiniRow).join('') : '<p class="muted">No rides yet.</p>')}
+      </div>
+    </div>
+    <div class="modal-actions">
+      ${dr.status === 'pending_approval' ? `<button class="link-btn primary" style="flex:1" onclick="approveDriver(${dr.id})">${icon('check', 12)} Approve</button>` : ''}
+      ${dr.status !== 'suspended' ? `<button class="link-btn danger" style="flex:1" onclick="suspendDriver(${dr.id})">${icon('pause', 12)} Suspend</button>` : `<button class="link-btn primary" style="flex:1" onclick="approveDriver(${dr.id})">${icon('check', 12)} Reactivate</button>`}
+      <button class="link-btn" style="flex:1" onclick="issuePenalty(${dr.id})">${icon('alert', 12)} Penalty</button>
+    </div>
+  </div></div>`;
+}
 
 /* ---- Coupons tab ---- */
 function couponsTab() {

@@ -130,6 +130,30 @@ table.data-table tr:hover td{background:var(--panel-2)}
 .empty-state svg{opacity:.4;margin-bottom:14px}
 .empty-state h2{color:var(--ink);font-size:16px;margin:0 0 8px}
 
+/* ---- Row-click affordance + detail modal ---- */
+table.data-table tbody tr.clickable{cursor:pointer}
+table.data-table tbody tr.clickable td:not(:last-child):hover{color:var(--ink)}
+.modal-backdrop{position:fixed;inset:0;background:#000000b0;backdrop-filter:blur(2px);z-index:80;display:flex;align-items:flex-start;justify-content:flex-end}
+.modal-panel{width:440px;max-width:100vw;height:100dvh;background:var(--panel);border-left:1px solid var(--border);box-shadow:-20px 0 50px #0009;display:flex;flex-direction:column;animation:slidein .18s ease-out}
+@keyframes slidein{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
+.modal-head{display:flex;align-items:center;gap:13px;padding:20px;border-bottom:1px solid var(--border-soft);flex-shrink:0}
+.modal-head .avatar-chip{width:46px;height:46px;font-size:15px}
+.modal-head h2{font-size:16px;margin:0}
+.modal-head small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.modal-close{margin-left:auto;width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:var(--panel-2);color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.modal-body{flex:1;overflow-y:auto;padding:20px}
+.modal-section{margin-bottom:22px}
+.modal-section h4{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted-2);font-weight:800;margin:0 0 12px}
+.modal-stat-row{display:flex;gap:10px;margin-bottom:18px}
+.modal-stat-row .stat-box{flex:1;background:var(--panel-2);border:1px solid var(--border-soft);border-radius:11px;padding:11px}
+.modal-stat-row .stat-box small{display:block;font-size:9.5px;color:var(--muted);font-weight:800;letter-spacing:.3px;text-transform:uppercase}
+.modal-stat-row .stat-box b{display:block;font-size:16px;margin-top:5px}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;padding:16px 20px;border-top:1px solid var(--border-soft);flex-shrink:0}
+.modal-actions .link-btn{flex:1;justify-content:center;padding:10px}
+.ride-mini-row{background:var(--panel-2);border:1px solid var(--border-soft);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px}
+.ride-mini-row .route{font-weight:700;margin-bottom:3px}
+.ride-mini-row .meta{color:var(--muted);font-size:11px;display:flex;justify-content:space-between}
+
 .coupon-row,.announcement-row{display:flex;justify-content:space-between;align-items:center;background:var(--panel-2);border:1px solid var(--border-soft);border-radius:12px;padding:13px 15px;margin-bottom:9px}
 .coupon-row b{font-size:14px;letter-spacing:.3px}
 .coupon-row small{display:block;color:var(--muted);font-size:11px;margin-top:3px}
@@ -189,4 +213,6 @@ table.data-table tr:hover td{background:var(--panel-2)}
   .coupon-row{flex-wrap:wrap;gap:8px}
   .stepper-row button{width:40px;height:40px}
   .commission-hero h2{font-size:34px}
+  .modal-panel{width:100vw}
+  .modal-stat-row{flex-wrap:wrap}
 }
