@@ -219,9 +219,22 @@ const ICONS = {
   complaints: '<path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4A9 9 0 0 1 4 20l-1 1 1-4A8.4 8.4 0 1 1 21 11.5Z"/>',
   reports: '<path d="M4 20V10M12 20V4M20 20v-7"/>',
   map: '<path d="m9 4-6 2v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
+  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"/><path d="M10 21h4"/>',
+  inbox: '<path d="m22 12-4 0-2 3h-8l-2-3-4 0"/><path d="M5.5 5.5h13l3.5 6.5v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-7l3.5-6.5Z"/>',
 };
 function icon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
+}
+const AVATAR_HUES = ['#e3b24c', '#7fa5d3', '#7fd39a', '#d38a7f', '#b491d3', '#6bc4c4'];
+function avatarChip(name, id, size = 38) {
+  const initials = (name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+  const hue = AVATAR_HUES[Math.abs(Number(id) || initials.charCodeAt(0)) % AVATAR_HUES.length];
+  return `<div class="avatar-chip" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.34)}px;background:${hue}">${initials}</div>`;
 }
 
 /* ---- Auth screen ---- */
@@ -357,8 +370,8 @@ function topbar() {
   const [title, sub] = titles[state.tab] || ['', ''];
   const unread = state.notifications.filter((n) => !n.read).length;
   return `<div class="topbar"><div><h1>${title}</h1><p>${sub}</p></div><div class="topbar-actions">
-    <span class="pill-btn">PKR ${(state.settings.total_commission_collected || 0).toLocaleString()} collected</span>
-    <button class="bell-btn" onclick="toggleNotifPanel()" aria-label="Notifications">🔔<span id="notifBadge" class="bell-badge" style="display:${unread ? 'flex' : 'none'}">${unread > 9 ? '9+' : unread}</span></button>
+    <span class="pill-btn">${icon('wallet', 13)} PKR ${(state.settings.total_commission_collected || 0).toLocaleString()} collected</span>
+    <button class="bell-btn" onclick="toggleNotifPanel()" aria-label="Notifications">${icon('bell', 15)}<span id="notifBadge" class="bell-badge" style="display:${unread ? 'flex' : 'none'}">${unread > 9 ? '9+' : unread}</span></button>
     <button class="topbar-signout" onclick="doLogout()" aria-label="Sign out">${icon('logout', 16)}</button>
   </div></div>${state.notifPanelOpen ? notifPanel() : ''}`;
 }
@@ -384,7 +397,7 @@ function dispatchTab() {
   const online = state.drivers.filter((d) => d.driver_profile && d.driver_profile.online);
 
   if (!pending.length && !dispatched.length) {
-    return '<div class="empty-state"><h2>No rides waiting on dispatch</h2><p>New requests from the rider app will appear here the moment a customer books.</p></div>';
+    return `<div class="empty-state">${icon('dispatch', 40)}<h2>No rides waiting on dispatch</h2><p>New requests from the rider app will appear here the moment a customer books.</p></div>`;
   }
 
   return [
@@ -393,7 +406,7 @@ function dispatchTab() {
       <h2>PKR ${r.calculated_fare} · ${r.category}</h2>
       <p class="muted">${r.customer ? r.customer.name : 'Rider'} · ${r.pickup_address} → ${r.drop_address} · ${r.distance_km} km</p>
       <h3 style="margin:18px 0 10px;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase">Assign a driver</h3>
-      ${online.map((d) => `<div class="driver-row"><img src="https://i.pravatar.cc/100?u=${d.id}" alt=""><div class="info"><b>${d.name}</b><small>★ ${d.rating} · ${d.driver_profile.vehicle_model || 'Vehicle'} · online</small></div><button class="btn-sm" onclick="assignDriver(${r.id},${d.id})">Assign</button></div>`).join('') || '<p class="muted">No drivers are online right now.</p>'}
+      ${online.map((d) => `<div class="driver-row">${avatarChip(d.name, d.id, 44)}<div class="info"><b>${d.name}</b><small>★ ${d.rating} · ${d.driver_profile.vehicle_model || 'Vehicle'} · online</small></div><button class="btn-sm" onclick="assignDriver(${r.id},${d.id})">Assign</button></div>`).join('') || '<p class="muted">No drivers are online right now.</p>'}
       <button class="pill-btn" style="margin-top:10px" onclick="cancelDispatchRide(${r.id})">Cancel this request</button>
     </div>`),
     ...dispatched.map((r) => `<div class="card dispatch-request">
@@ -411,35 +424,38 @@ async function cancelDispatchRide(rideId) { try { await AdminApi.cancelRide(ride
 /* ---- Drivers tab ---- */
 const DOC_LABELS = { cnic_front: 'CNIC — Front', cnic_back: 'CNIC — Back', license: 'Driving License', vehicle_reg: 'Vehicle Registration', selfie: 'Selfie' };
 function driversTab() {
-  if (!state.drivers.length) return '<div class="empty-state"><h2>No drivers yet</h2><p>Driver accounts will appear here once they sign up.</p></div>';
+  if (!state.drivers.length) return `<div class="empty-state">${icon('drivers', 40)}<h2>No drivers yet</h2><p>Driver accounts will appear here once they sign up.</p></div>`;
   return `<div class="card"><table class="data-table"><thead><tr><th>Driver</th><th>Account</th><th>Online</th><th>Rating</th><th>Strikes</th><th></th></tr></thead><tbody>
     ${state.drivers.map((d) => { const p = d.driver_profile || {}; const docs = d.driver_documents || [];
-      const accountBadge = d.status === 'active' ? '<span class="badge on">Active</span>' : d.status === 'suspended' ? '<span class="badge off">Suspended</span>' : '<span class="badge" style="background:#e3b24c22;color:var(--accent)">Pending approval</span>';
+      const accountBadge = d.status === 'active' ? '<span class="badge on">Active</span>' : d.status === 'suspended' ? '<span class="badge off">Suspended</span>' : '<span class="badge warn">Pending approval</span>';
       return `<tr>
-      <td data-label="Driver"><div class="table-driver"><img src="https://i.pravatar.cc/100?u=${d.id}" alt=""><div><b>${d.name}</b><br><small style="color:var(--muted)">${p.vehicle_model || '—'} · ${p.plate_number || '—'} · ${p.category || '—'}</small></div></div></td>
+      <td data-label="Driver"><div class="table-driver">${avatarChip(d.name, d.id)}<div><b>${d.name}</b><small style="color:var(--muted)">${p.vehicle_model || '—'} · ${p.plate_number || '—'} · ${p.category || '—'}</small></div></div></td>
       <td data-label="Account">${accountBadge}</td>
       <td data-label="Online"><span class="badge ${p.online ? 'on' : 'off'}">${p.online ? 'Online' : 'Offline'}</span></td>
       <td data-label="Rating">${d.rating} ★</td>
       <td data-label="Strikes">${p.strikes ?? 0}</td>
       <td data-label="">
-        <button class="link-btn" onclick="toggleDriverDocs(${d.id})">${state.expandedDriver === d.id ? 'Hide' : 'Documents'} (${docs.length}/5)</button>
-        ${d.status === 'pending_approval' ? `<button class="link-btn" onclick="approveDriver(${d.id})">Approve</button>` : ''}
-        ${d.status !== 'suspended' ? `<button class="link-btn danger" onclick="suspendDriver(${d.id})">Suspend</button>` : `<button class="link-btn" onclick="approveDriver(${d.id})">Reactivate</button>`}
-        <button class="link-btn" onclick="issuePenalty(${d.id})">Penalty</button>
+        <div class="action-group">
+        <button class="link-btn" onclick="toggleDriverDocs(${d.id})">${icon('image', 12)} ${state.expandedDriver === d.id ? 'Hide' : 'Docs'} (${docs.length}/5)</button>
+        ${d.status === 'pending_approval' ? `<button class="link-btn primary" onclick="approveDriver(${d.id})">${icon('check', 12)} Approve</button>` : ''}
+        ${d.status !== 'suspended' ? `<button class="link-btn danger" onclick="suspendDriver(${d.id})">${icon('pause', 12)} Suspend</button>` : `<button class="link-btn primary" onclick="approveDriver(${d.id})">${icon('check', 12)} Reactivate</button>`}
+        <button class="link-btn" onclick="issuePenalty(${d.id})">${icon('alert', 12)} Penalty</button>
+        </div>
       </td>
     </tr>
-    ${state.expandedDriver === d.id ? `<tr><td colspan="6" class="docs-row" style="padding:0 12px 16px"><div class="grid grid-3" style="gap:10px">
+    ${state.expandedDriver === d.id ? `<tr><td colspan="6" class="docs-row" style="padding:0 0 16px 2px"><div class="grid grid-3" style="gap:10px">
       ${Object.keys(DOC_LABELS).map((type) => {
         const doc = docs.find((x) => x.type === type);
-        if (!doc) return `<div class="card" style="padding:10px"><b style="font-size:12px">${DOC_LABELS[type]}</b><p class="muted" style="margin-top:6px">Not uploaded</p></div>`;
-        const statusColor = doc.status === 'verified' ? 'var(--green)' : doc.status === 'rejected' ? 'var(--red)' : 'var(--accent)';
-        return `<div class="card" style="padding:10px">
-          <b style="font-size:12px">${DOC_LABELS[type]}</b>
-          <a href="https://api.pickanddrive.pk/storage/${doc.file_path}" target="_blank"><img src="https://api.pickanddrive.pk/storage/${doc.file_path}" alt="" style="width:100%;border-radius:8px;margin-top:6px;display:block;max-height:140px;object-fit:cover"></a>
-          <p style="margin:6px 0 8px;font-size:11px;font-weight:800;color:${statusColor};text-transform:capitalize">${doc.status}</p>
-          <div style="display:flex;gap:6px">
-            <button class="pill-btn gold" style="flex:1;padding:7px;font-size:11px" onclick="verifyDoc(${doc.id},'verified')">Verify</button>
-            <button class="pill-btn" style="flex:1;padding:7px;font-size:11px" onclick="verifyDoc(${doc.id},'rejected')">Reject</button>
+        if (!doc) return `<div class="doc-card empty">${icon('image', 26)}<span>Not uploaded</span></div>`;
+        const statusClass = doc.status === 'verified' ? 'on' : doc.status === 'rejected' ? '' : 'warn';
+        const statusColor = doc.status === 'verified' ? '#7fd39a' : doc.status === 'rejected' ? '#e08a7d' : 'var(--accent)';
+        return `<div class="doc-card">
+          <b>${DOC_LABELS[type]}</b>
+          <a class="doc-thumb-wrap" href="https://api.pickanddrive.pk/storage/${doc.file_path}" target="_blank"><img src="https://api.pickanddrive.pk/storage/${doc.file_path}" alt=""></a>
+          <p class="doc-status" style="color:${statusColor}">${doc.status}</p>
+          <div class="doc-actions">
+            <button class="link-btn primary" onclick="verifyDoc(${doc.id},'verified')">${icon('check', 12)} Verify</button>
+            <button class="link-btn danger" onclick="verifyDoc(${doc.id},'rejected')">${icon('x', 12)} Reject</button>
           </div>
         </div>`;
       }).join('')}
@@ -454,14 +470,14 @@ async function issuePenalty(id) { try { await AdminApi.issuePenalty(id); notify(
 
 /* ---- Customers tab ---- */
 function customersTab() {
-  if (!state.customers.length) return '<div class="empty-state"><h2>No customers yet</h2><p>Rider accounts will appear here once they sign up.</p></div>';
+  if (!state.customers.length) return `<div class="empty-state">${icon('customers', 40)}<h2>No customers yet</h2><p>Rider accounts will appear here once they sign up.</p></div>`;
   return `<div class="card"><table class="data-table"><thead><tr><th>Customer</th><th>Rides</th><th>Rating</th><th>Status</th><th></th></tr></thead><tbody>
     ${state.customers.map((c) => `<tr>
-      <td data-label="Customer"><b>${c.name}</b></td>
+      <td data-label="Customer"><div class="table-driver">${avatarChip(c.name, c.id)}<b>${c.name}</b></div></td>
       <td data-label="Rides">${c.rides}</td>
       <td data-label="Rating">${c.rating} ★</td>
       <td data-label="Status"><span class="badge ${c.blocked ? 'off' : 'on'}">${c.blocked ? 'Blocked' : 'Active'}</span></td>
-      <td data-label=""><button class="link-btn ${c.blocked ? '' : 'danger'}" onclick="toggleBlacklist(${c.id},${c.blocked})">${c.blocked ? 'Unblock' : 'Block'}</button></td>
+      <td data-label=""><div class="action-group"><button class="link-btn ${c.blocked ? 'primary' : 'danger'}" onclick="toggleBlacklist(${c.id},${c.blocked})">${icon(c.blocked ? 'check' : 'pause', 12)} ${c.blocked ? 'Unblock' : 'Block'}</button></div></td>
     </tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -480,7 +496,7 @@ function couponsTab() {
       <button class="btn-primary" onclick="createCoupon()">Create coupon</button>
     </div>
     <div class="card"><h3>Active &amp; disabled codes</h3>
-      ${state.coupons.map((c) => `<div class="coupon-row"><div><b>${c.code}</b><small>${c.type === 'percent' ? c.discount + '% off' : 'PKR ' + c.discount + ' off'}</small></div><div><button class="link-btn" onclick="toggleCoupon('${c.code}')">${c.active ? 'Disable' : 'Enable'}</button><button class="link-btn danger" onclick="deleteCoupon('${c.code}')">Delete</button></div></div>`).join('') || '<p class="muted">No coupons yet.</p>'}
+      ${state.coupons.map((c) => `<div class="coupon-row"><div><b>${c.code}</b><small>${c.type === 'percent' ? c.discount + '% off' : 'PKR ' + c.discount + ' off'}</small></div><div class="action-group"><button class="link-btn ${c.active ? '' : 'primary'}" onclick="toggleCoupon('${c.code}')">${c.active ? icon('pause', 12) : icon('check', 12)} ${c.active ? 'Disable' : 'Enable'}</button><button class="link-btn danger" onclick="deleteCoupon('${c.code}')">${icon('x', 12)} Delete</button></div></div>`).join('') || '<p class="muted">No coupons yet.</p>'}
     </div>
   </div>`;
 }
@@ -613,7 +629,7 @@ function categoriesTab() {
         <td data-label="Base">PKR ${c.base_fare}</td>
         <td data-label="Per km">PKR ${c.per_km_rate}</td>
         <td data-label="Status"><span class="badge ${c.active ? 'on' : 'off'}">${c.active ? 'Active' : 'Disabled'}</span></td>
-        <td data-label=""><button class="link-btn" onclick="toggleCategoryActive(${c.id},${c.active})">${c.active ? 'Disable' : 'Enable'}</button><button class="link-btn danger" onclick="deleteCategory(${c.id})">Delete</button></td>
+        <td data-label=""><div class="action-group"><button class="link-btn ${c.active ? '' : 'primary'}" onclick="toggleCategoryActive(${c.id},${c.active})">${c.active ? icon('pause', 12) : icon('check', 12)} ${c.active ? 'Disable' : 'Enable'}</button><button class="link-btn danger" onclick="deleteCategory(${c.id})">${icon('x', 12)} Delete</button></div></td>
       </tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px">No categories yet.</td></tr>'}
     </tbody></table></div>
   </div>`;
@@ -641,14 +657,14 @@ function $(id) { return document.getElementById(id); }
 
 /* ---- Withdrawals tab ---- */
 function withdrawalsTab() {
-  if (!state.withdrawals.length) return '<div class="empty-state"><h2>No withdrawal requests</h2><p>Driver withdrawal requests will appear here.</p></div>';
+  if (!state.withdrawals.length) return `<div class="empty-state">${icon('wallet', 40)}<h2>No withdrawal requests</h2><p>Driver withdrawal requests will appear here.</p></div>`;
   return `<div class="card"><table class="data-table"><thead><tr><th>Driver</th><th>Amount</th><th>Status</th><th>Requested</th><th></th></tr></thead><tbody>
     ${state.withdrawals.map((w) => `<tr>
-      <td data-label="Driver"><b>${w.driver ? w.driver.name : '—'}</b><br><small style="color:var(--muted)">${w.driver ? w.driver.phone : ''}</small></td>
+      <td data-label="Driver"><div class="table-driver">${avatarChip(w.driver ? w.driver.name : '?', w.driver ? w.driver.id : 0)}<div><b>${w.driver ? w.driver.name : '—'}</b><small style="color:var(--muted)">${w.driver ? w.driver.phone : ''}</small></div></div></td>
       <td data-label="Amount">PKR ${w.amount.toLocaleString()}</td>
-      <td data-label="Status"><span class="badge ${w.status === 'approved' ? 'on' : w.status === 'rejected' ? 'off' : ''}" style="${w.status === 'pending' ? 'background:#e3b24c22;color:var(--accent)' : ''}">${w.status}</span></td>
+      <td data-label="Status"><span class="badge ${w.status === 'approved' ? 'on' : w.status === 'rejected' ? 'off' : 'warn'}">${w.status}</span></td>
       <td data-label="Requested">${new Date(w.created_at).toLocaleString()}</td>
-      <td data-label="">${w.status === 'pending' ? `<button class="link-btn" onclick="approveWithdrawal(${w.id})">Approve</button><button class="link-btn danger" onclick="rejectWithdrawal(${w.id})">Reject</button>` : ''}</td>
+      <td data-label="">${w.status === 'pending' ? `<div class="action-group"><button class="link-btn primary" onclick="approveWithdrawal(${w.id})">${icon('check', 12)} Approve</button><button class="link-btn danger" onclick="rejectWithdrawal(${w.id})">${icon('x', 12)} Reject</button></div>` : ''}</td>
     </tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -657,15 +673,15 @@ async function rejectWithdrawal(id) { try { await AdminApi.rejectWithdrawal(id);
 
 /* ---- Complaints tab ---- */
 function complaintsTab() {
-  if (!state.complaints.length) return '<div class="empty-state"><h2>No complaints</h2><p>Support messages from riders and drivers will appear here.</p></div>';
+  if (!state.complaints.length) return `<div class="empty-state">${icon('complaints', 40)}<h2>No complaints</h2><p>Support messages from riders and drivers will appear here.</p></div>`;
   return state.complaints.map((c) => `<div class="card" style="margin-bottom:12px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
       <div><b style="font-size:14px">${c.subject}</b><br><small style="color:var(--muted)">${c.user ? c.user.name : ''} (${c.user ? c.user.role : ''})${c.ride ? ' · ' + c.ride.pickup_address + ' → ' + c.ride.drop_address : ''}</small></div>
-      <span class="badge ${c.status === 'resolved' ? 'on' : 'off'}">${c.status}</span>
+      <span class="badge ${c.status === 'resolved' ? 'on' : 'warn'}" style="flex-shrink:0">${c.status}</span>
     </div>
     <p class="muted" style="margin:10px 0">${c.message}</p>
     ${c.admin_note ? `<p style="font-size:12px;color:var(--ink)"><b>Reply:</b> ${c.admin_note}</p>` : ''}
-    ${c.status === 'open' ? `<button class="link-btn" onclick="resolveComplaintPrompt(${c.id})">Reply &amp; resolve</button>` : ''}
+    ${c.status === 'open' ? `<div class="action-group" style="justify-content:flex-start"><button class="link-btn primary" onclick="resolveComplaintPrompt(${c.id})">${icon('check', 12)} Reply &amp; resolve</button></div>` : ''}
   </div>`).join('');
 }
 async function resolveComplaintPrompt(id) {
