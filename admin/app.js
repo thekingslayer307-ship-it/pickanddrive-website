@@ -318,6 +318,9 @@ function startPolling() {
   pollTimer = setInterval(() => {
     if (!state.loggedIn) return;
     apiRequest('/admin/dispatch/queue').then((q) => { state.dispatch = q; save(); if (state.tab === 'dispatch') render(); }).catch(() => {});
+    // Drivers go online/offline in real time — the dispatch tab's "Assign a driver" list is
+    // built from this same state.drivers snapshot, so it needs refreshing too, not just the queue.
+    apiRequest('/admin/drivers').then((d) => { state.drivers = d; save(); if (state.tab === 'dispatch' || state.tab === 'drivers') render(); }).catch(() => {});
     apiRequest('/notifications').then((n) => { state.notifications = n; save(); if (state.notifPanelOpen) render(); else renderBellBadge(); }).catch(() => {});
   }, 8000);
 }
