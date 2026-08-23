@@ -6,19 +6,19 @@ const API_BASE = 'https://api.pickanddrive.pk/api/v1';
 const KEY = 'pickanddrive-app-v1';
 const GOOGLE_CLIENT_ID = ''; // TODO: fill in once a Google Cloud OAuth client exists
 
-const CAT_ICONS = { bike: '🏍', economy: '🚗', city: '🚘', premium: '🚙', family: '🚐', school: '🏫' };
+const CAT_ICONS = { bike: 'bike', economy: 'car', city: 'car', premium: 'car', family: 'van', school: 'cap' };
 let CATS = [
-  { id: 'bike', icon: '🏍', name: 'Bike' },
-  { id: 'economy', icon: '🚗', name: 'Economy' },
-  { id: 'city', icon: '🚘', name: 'City' },
-  { id: 'premium', icon: '🚙', name: 'Premium' },
-  { id: 'family', icon: '🚐', name: 'Family' },
-  { id: 'school', icon: '🏫', name: 'School' },
+  { id: 'bike', icon: 'bike', name: 'Bike' },
+  { id: 'economy', icon: 'car', name: 'Economy' },
+  { id: 'city', icon: 'car', name: 'City' },
+  { id: 'premium', icon: 'car', name: 'Premium' },
+  { id: 'family', icon: 'van', name: 'Family' },
+  { id: 'school', icon: 'cap', name: 'School' },
 ]; // overwritten by loadCategories() with the admin-configured list once logged in
 async function loadCategories() {
   try {
     const cats = await apiRequest('/categories');
-    if (cats && cats.length) CATS = cats.map(c => ({ id: c.category, icon: CAT_ICONS[c.category] || '🚗', name: c.label || c.category }));
+    if (cats && cats.length) CATS = cats.map(c => ({ id: c.category, icon: CAT_ICONS[c.category] || 'car', name: c.label || c.category }));
   } catch (e) { /* keep fallback list */ }
 }
 let safetyContactNumber = '1122';
@@ -353,11 +353,11 @@ function renderPickerFields() {
   return `
     <div class="picker-field ${state.pickerTarget === 'pickup' ? 'active' : ''}" onclick="setPickerTarget('pickup')">
       <span class="dot g"></span><span class="txt">${state.pickup ? state.pickup.address : 'Set pickup point'}</span>
-      ${state.pickerTarget === 'pickup' ? '<span class="tag">● on map</span>' : ''}
+      ${state.pickerTarget === 'pickup' ? '<span class="tag">' + icon('pin','i-sm') + ' on map</span>' : ''}
     </div>
     <div class="picker-field ${state.pickerTarget === 'drop' ? 'active' : ''}" onclick="setPickerTarget('drop')">
       <span class="dot k"></span><span class="txt">${state.drop ? state.drop.address : 'Set drop-off point'}</span>
-      ${state.pickerTarget === 'drop' ? '<span class="tag">● on map</span>' : ''}
+      ${state.pickerTarget === 'drop' ? '<span class="tag">' + icon('pin','i-sm') + ' on map</span>' : ''}
     </div>`;
 }
 function patchPickerHeader() {
@@ -574,9 +574,9 @@ function scWelcome() {
     <img class="logo-lockup" src="assets/logo.png" alt="Pick&amp;Drive">
     <p class="welcome-tagline">Book a ride across Pakistan — a real driver, a fixed fare, no haggling.</p>
     <div class="trust-row">
-      <span>🛡 Verified drivers</span>
-      <span>💳 Fixed fares</span>
-      <span>🆘 In-trip safety</span>
+      <span>${icon('shield','i-sm')} Verified drivers</span>
+      <span>${icon('cash','i-sm')} Fixed fares</span>
+      <span>${icon('siren','i-sm')} In-trip safety</span>
     </div>
     <div class="spacer" style="flex:.62"></div>
     <div class="welcome-actions">
@@ -588,7 +588,7 @@ function scWelcome() {
 }
 function scLogin() {
   return `<div class="brand-bg"><div class="p-pad" style="gap:14px">
-    <div class="back" onclick="goto('welcome')">← Back</div>
+    <div class="back" onclick="goto('welcome')">${icon('back','i-sm')} Back</div>
     <div class="spacer"></div>
     <div class="auth-card">
       <div class="auth-head">
@@ -613,7 +613,7 @@ function scLogin() {
 }
 function scDriverSignup() {
   return `<div class="p-pad">
-    <div class="back" onclick="goto('welcome')">← Back</div>
+    <div class="back" onclick="goto('welcome')">${icon('back','i-sm')} Back</div>
     <div class="p-title">Become a driver</div>
     <div class="p-sub">Submit your details — our team reviews every application before you can go online.</div>
     <div class="field-label">Full name</div>
@@ -625,14 +625,14 @@ function scDriverSignup() {
     <div class="field-label">Plate number</div>
     <input class="field-input" id="signupPlate" placeholder="e.g. LEA-1234">
     <div class="field-label">Category</div>
-    <select class="field-input" id="signupCategory">${CATS.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('')}</select>
+    <select class="field-input" id="signupCategory">${CATS.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select>
     <button class="btn" style="margin-top:6px" onclick="registerDriver()">Submit application</button>
   </div>`;
 }
 function scOtp() {
   const boxes = state.otp.map((v, i) => `<input id="otp${i}" inputmode="numeric" maxlength="1" value="${v}" oninput="otpInput(${i},this.value)" onkeydown="otpKey(${i},event)">`).join('');
   return `<div class="p-pad">
-    <div class="back" onclick="goto('login')">← Back</div>
+    <div class="back" onclick="goto('login')">${icon('back','i-sm')} Back</div>
     <div class="p-title">Verification Code</div>
     <div class="p-sub">We sent a 4-digit code to <b>${state.phone}</b></div>
     <div class="otp-boxes">${boxes}</div>
@@ -645,25 +645,25 @@ function scOtp() {
 /* ---- Screens: customer ---- */
 function scCustomerHome() {
   return `<div class="p-pad" style="gap:14px">
-    <div class="topbar2"><span class="brandmark">🔑 Pick&amp;Drive</span><span class="link" onclick="logout()">Sign out</span></div>
-    <div class="field" onclick="enterSearchScreen()"><span class="dot k"></span><span class="txt muted">Where to?</span><span>🔍</span></div>
+    <div class="topbar2"><span class="brandmark">${icon('key')} Pick&amp;Drive</span><span class="link" onclick="logout()">Sign out</span></div>
+    <div class="field" onclick="enterSearchScreen()"><span class="dot k"></span><span class="txt muted">Where to?</span>${icon('search','i-sm')}</div>
     <div class="field-label">Ride category</div>
-    <div class="cat-row">${CATS.map(c => `<div class="cat-item ${state.category === c.id ? 'sel' : ''}" onclick="selectCategory('${c.id}')"><div class="cat-icon">${c.icon}</div><div class="cat-name">${c.name}</div></div>`).join('')}</div>
+    <div class="cat-row">${CATS.map(c => `<div class="cat-item ${state.category === c.id ? 'sel' : ''}" onclick="selectCategory('${c.id}')">${icon(c.icon)}<div class="cat-name">${c.name}</div></div>`).join('')}</div>
     <div class="spacer"></div>
     <button class="btn" onclick="enterSearchScreen()">Book a ride</button>
     <div class="btn-row">
-      <button class="btn outline" style="flex:1" onclick="openHistory()">🕒 Ride history</button>
-      <button class="btn outline" style="flex:1" onclick="openSupport()">🎧 Support</button>
+      <button class="btn outline" style="flex:1" onclick="openHistory()">${icon('history','i-sm')} Ride history</button>
+      <button class="btn outline" style="flex:1" onclick="openSupport()">${icon('headset','i-sm')} Support</button>
     </div>
   </div>`;
 }
 function renderDropSuggestions() {
-  return state.dropResults.map((r, i) => `<div class="sugg" onclick="pickDrop(${i})"><span class="ico">📍</span><div><div class="t">${r.label.split(',')[0]}</div><div class="s">${r.label.split(',').slice(1, 3).join(',')}</div></div></div>`).join('');
+  return state.dropResults.map((r, i) => `<div class="sugg" onclick="pickDrop(${i})"><span class="ico">${icon('pin','i-sm')}</span><div><div class="t">${r.label.split(',')[0]}</div><div class="s">${r.label.split(',').slice(1, 3).join(',')}</div></div></div>`).join('');
 }
 function scSearch() {
   return `<div class="picker-screen">
     <div class="picker-header">
-      <div class="back" onclick="leaveSearchScreen('customerHome')">← Set your route</div>
+      <div class="back" onclick="leaveSearchScreen('customerHome')">${icon('back','i-sm')} Set your route</div>
       <div id="pickerHeaderFields">${renderPickerFields()}</div>
       <div class="picker-search-wrap">
         <input class="field-input" id="dropInput" placeholder="Search for a place or address…" value="${state.dropQuery}" oninput="onDropInput(this.value)">
@@ -672,8 +672,8 @@ function scSearch() {
     </div>
     <div class="picker-map-area">
       <div id="pickerMapEl" style="position:absolute;inset:0"></div>
-      <div class="center-pin-wrap"><div class="pin-icon">📍</div><div class="pin-shadow"></div></div>
-      <button class="locate-fab" onclick="centerMapOnMyLocation()" aria-label="Use my location">🎯</button>
+      <div class="center-pin-wrap">${icon('pin','pin-icon')}<div class="pin-shadow"></div></div>
+      <button class="locate-fab" onclick="centerMapOnMyLocation()" aria-label="Use my location">${icon('locate')}</button>
     </div>
     <div class="picker-footer">
       <button class="btn" id="pickerFooterBtn" ${(state.pickup && state.drop) ? '' : 'disabled'} onclick="leaveSearchScreen('route')">Continue</button>
@@ -683,11 +683,11 @@ function scSearch() {
 function scRoute() {
   const est = state.fareEstimate;
   return `<div class="p-pad">
-    <div class="back" onclick="enterSearchScreen()">← Route &amp; fare</div>
+    <div class="back" onclick="enterSearchScreen()">${icon('back','i-sm')} Route &amp; fare</div>
     <div class="field"><span class="dot g"></span><span class="txt">${state.pickup ? state.pickup.address : '—'}</span></div>
     <div class="field"><span class="dot k"></span><span class="txt">${state.drop ? state.drop.address : '—'}</span></div>
     <div class="field-label">Vehicle</div>
-    <div class="cat-row">${CATS.map(c => `<div class="cat-item ${state.category === c.id ? 'sel' : ''}" onclick="selectCategory('${c.id}')"><div class="cat-icon">${c.icon}</div><div class="cat-name">${c.name}</div></div>`).join('')}</div>
+    <div class="cat-row">${CATS.map(c => `<div class="cat-item ${state.category === c.id ? 'sel' : ''}" onclick="selectCategory('${c.id}')">${icon(c.icon)}<div class="cat-name">${c.name}</div></div>`).join('')}</div>
     <div class="fare-box">
       ${est ? `<div class="fare-amt"><small>PKR</small>${est.calculated_fare}</div>
         <div class="fare-lines">
@@ -705,13 +705,13 @@ function scRoute() {
 function scConfirm() {
   const est = state.fareEstimate;
   return `<div class="p-pad">
-    <div class="back" onclick="goto('route')">← Confirm booking</div>
+    <div class="back" onclick="goto('route')">${icon('back','i-sm')} Confirm booking</div>
     <div class="field"><span class="dot g"></span><span class="txt">${state.pickup.address}</span></div>
     <div class="field"><span class="dot k"></span><span class="txt">${state.drop.address}</span></div>
     <div class="field-label">Payment method</div>
     <div class="btn-row">
-      <button class="btn ${state.paymentMethod === 'cash' ? '' : 'outline'}" style="flex:1" onclick="setPaymentMethod('cash')">💵 Cash</button>
-      <button class="btn ${state.paymentMethod === 'online' ? '' : 'outline'}" style="flex:1" onclick="setPaymentMethod('online')">💳 Online</button>
+      <button class="btn ${state.paymentMethod === 'cash' ? '' : 'outline'}" style="flex:1" onclick="setPaymentMethod('cash')">${icon('cash','i-sm')} Cash</button>
+      <button class="btn ${state.paymentMethod === 'online' ? '' : 'outline'}" style="flex:1" onclick="setPaymentMethod('online')">${icon('card','i-sm')} Online</button>
     </div>
     <p class="p-sub">Your booking goes to our dispatch team, who assign the closest available driver — this usually takes under a minute.</p>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px"><span class="p-sub">Fare</span><span class="p-title" style="font-size:22px">PKR ${est.calculated_fare}</span></div>
@@ -773,7 +773,7 @@ function initLiveMap(ride) {
   L.marker(drop, { icon: L.divIcon({ className: '', html: '<div class="pin-marker drop"></div>', iconSize: [14, 14] }) }).addTo(liveMap);
   const pos = driverPositionOf(ride);
   if (pos) {
-    liveMapMarker = L.marker([pos.lat, pos.lng], { icon: L.divIcon({ className: '', html: '<div class="driver-marker">🚗</div>', iconSize: [26, 26] }) }).addTo(liveMap);
+    liveMapMarker = L.marker([pos.lat, pos.lng], { icon: L.divIcon({ className: '', html: '<div class="driver-marker">' + icon('nav','i-sm') + '</div>', iconSize: [26, 26] }) }).addTo(liveMap);
   }
   // Leaflet measures its container at construction. On this screen the map is built in the same
   // frame the markup is inserted, so it reads 0×0 and paints nothing but blank tiles — hence the
@@ -792,7 +792,7 @@ function updateLiveMapMarker(ride) {
   const pos = driverPositionOf(ride);
   if (!pos) return;
   if (liveMapMarker) liveMapMarker.setLatLng([pos.lat, pos.lng]);
-  else liveMapMarker = L.marker([pos.lat, pos.lng], { icon: L.divIcon({ className: '', html: '<div class="driver-marker">🚗</div>', iconSize: [26, 26] }) }).addTo(liveMap);
+  else liveMapMarker = L.marker([pos.lat, pos.lng], { icon: L.divIcon({ className: '', html: '<div class="driver-marker">' + icon('nav','i-sm') + '</div>', iconSize: [26, 26] }) }).addTo(liveMap);
 }
 
 /* ---- Chat ---- */
@@ -828,11 +828,11 @@ function chatOverlay() {
   const ride = state.activeRide;
   const otherName = state.role === 'driver' ? (ride.customer ? ride.customer.name : 'Rider') : (ride.driver ? ride.driver.name : 'Driver');
   return `<div class="chat-overlay">
-    <div class="chat-head"><div class="back" onclick="closeChat()">← ${otherName}</div></div>
+    <div class="chat-head"><div class="back" onclick="closeChat()">${icon('back','i-sm')} ${otherName}</div></div>
     <div class="chat-body" id="chatBody">${renderChatMessages()}</div>
     <div class="chat-input-row">
       <input id="chatInput" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendChatMessage()">
-      <button onclick="sendChatMessage()">➤</button>
+      <button onclick="sendChatMessage()">${icon('send','i-sm','Send')}</button>
     </div>
   </div>`;
 }
@@ -869,8 +869,8 @@ function rideStatusSteps(status) {
   const idx = order.indexOf(status);
   return order.map((s, i) => {
     const cls = i < idx ? 'done' : i === idx ? 'active' : 'todo';
-    const icon = i < idx ? '✓' : i === idx ? '●' : '○';
-    return `<div class="step-row"><div class="step-dot ${cls}">${icon}</div><div class="step-t ${cls === 'todo' ? 'todo' : ''}">${labels[s]}</div></div>`;
+    const mark = i < idx ? icon('check') : String(i + 1);
+    return `<div class="step-row"><div class="step-dot ${cls}">${mark}</div><div class="step-t ${cls === 'todo' ? 'todo' : ''}">${labels[s]}</div></div>`;
   }).join('');
 }
 function routeCard(ride) {
@@ -893,7 +893,7 @@ function scWaiting() {
   const assigned = ride.status === 'dispatched';
   return `<div class="brand-bg"><div class="p-pad" style="gap:16px">
     <div class="spacer"></div>
-    <div class="radar"><i></i><i></i><i></i><div class="radar-core">🚕</div></div>
+    <div class="radar"><i></i><i></i><i></i><div class="radar-core">${icon('car','i-xl')}</div></div>
     <div style="text-align:center">
       <div class="p-title">${assigned ? 'Confirming your driver' : 'Finding you a driver'}</div>
       <p class="p-sub" style="margin-top:6px">${assigned
@@ -901,7 +901,7 @@ function scWaiting() {
         : 'Our dispatch team is matching you with the nearest available driver.'}</p>
     </div>
     ${routeCard(ride)}
-    <div id="stepListWrap" style="width:100%;background:rgba(255,253,248,.72);border:1px solid var(--line);border-radius:16px;padding:6px 14px">${rideStatusSteps(ride.status)}</div>
+    <div id="stepListWrap" class="step-panel">${rideStatusSteps(ride.status)}</div>
     <div class="spacer"></div>
     <button class="btn outline" onclick="cancelActiveRide()">Cancel request</button>
   </div></div>`;
@@ -930,22 +930,22 @@ function scTracking() {
       <div class="ava">${initials}</div>
       <div class="who">
         <b>${driver.name || 'Your driver'}</b>
-        <small>★ ${driver.rating || '—'}${vehicle ? ' · ' + vehicle : ''}</small>
+        <small>${icon('star','i-sm')} ${driver.rating || '—'}${vehicle ? ' · ' + vehicle : ''}</small>
       </div>
-      <button class="chat-cta" onclick="openChat()">💬 Chat</button>
+      <button class="chat-cta" onclick="openChat()" aria-label="Chat with driver">${icon('chat')}</button>
     </div>
 
-    ${ride.pickup_pin ? `<div class="route-fare" style="background:rgba(255,253,248,.9);border:1px solid var(--line);border-radius:14px;padding:12px 14px;border-top:1px solid var(--line)">
-      <span>Pickup PIN — share with driver</span><b style="letter-spacing:.22em">${ride.pickup_pin}</b>
+    ${ride.pickup_pin ? `<div class="route-fare pin-row">
+      <span>Pickup PIN — share with driver</span><b class="num">${ride.pickup_pin}</b>
     </div>` : ''}
 
     ${routeCard(ride)}
 
-    <div id="stepListWrap" style="width:100%;background:rgba(255,253,248,.72);border:1px solid var(--line);border-radius:16px;padding:6px 14px">${rideStatusSteps(ride.status)}</div>
+    <div id="stepListWrap" class="step-panel">${rideStatusSteps(ride.status)}</div>
 
     <div class="safety-row">
-      <button onclick="shareTrip()">📍 Share trip</button>
-      <button class="sos" onclick="triggerSos()">🆘 SOS</button>
+      <button onclick="shareTrip()">${icon('share','i-sm')} Share trip</button>
+      <button class="sos" onclick="triggerSos()">${icon('siren','i-sm')} SOS</button>
     </div>
     <p class="p-sub" style="text-align:center;font-size:10.5px">SOS calls ${safetyContactNumber} directly — not a monitored live safety line.</p>
     <div class="spacer"></div>
@@ -957,12 +957,12 @@ function scRate() {
   const driver = ride.driver || {};
   const prof = driver.driver_profile || {};
   const initials = (driver.name || 'D').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
-  const stars = [1, 2, 3, 4, 5].map(n => `<span class="${state.rating >= n ? 'on' : ''}" onclick="rateRide(${n})">★</span>`).join('');
+  const stars = [1, 2, 3, 4, 5].map(n => `<span class="${state.rating >= n ? 'on' : ''}" onclick="rateRide(${n})">${icon('star')}</span>`).join('');
   const labels = { 1: 'Poor', 2: 'Not great', 3: 'Okay', 4: 'Good', 5: 'Excellent' };
   return `<div class="brand-bg"><div class="p-pad" style="gap:14px">
     <div class="spacer"></div>
     <div style="text-align:center">
-      <div class="checkmark-circle" style="margin:0 auto">✓</div>
+      <div class="checkmark-circle">${icon('check')}</div>
       <div class="p-title" style="margin-top:12px">Trip completed</div>
       <p class="p-sub" style="margin-top:5px">Thanks for riding with Pick&amp;Drive.</p>
     </div>
@@ -1014,7 +1014,7 @@ function scHistory() {
     </div>
   </div>`).join('') || '<div class="empty2"><h2>No past rides yet</h2><p>Your completed and cancelled rides will show up here.</p></div>';
   return `<div class="p-pad">
-    <div class="back" onclick="goto('customerHome')">← Ride history</div>
+    <div class="back" onclick="goto('customerHome')">${icon('back','i-sm')} Ride history</div>
     <div style="overflow-y:auto">${rows}</div>
   </div>`;
 }
@@ -1053,7 +1053,7 @@ function scSupport() {
     ${c.admin_note ? `<p class="p-sub" style="margin-top:6px;color:var(--ink)"><b>Our reply:</b> ${c.admin_note}</p>` : ''}
   </div>`).join('') || '<p class="p-sub">No previous messages.</p>';
   return `<div class="p-pad">
-    <div class="back" onclick="goto('customerHome')">← Support</div>
+    <div class="back" onclick="goto('customerHome')">${icon('back','i-sm')} Support</div>
     ${state.complaintRideId ? `<p class="p-sub">Reporting an issue for ride #${state.complaintRideId}</p>` : ''}
     <div class="field-label">Subject</div>
     <input class="field-input" id="complaintSubject" placeholder="What's this about?">
@@ -1071,7 +1071,7 @@ function scDriverHome() {
   const active = state.activeRide;
   const pending = state.user && state.user.status === 'pending_approval';
   return `<div class="p-pad" style="gap:14px">
-    <div class="topbar2"><span class="brandmark">🔑 Pick&amp;Drive</span><span class="link" onclick="logout()">Sign out</span></div>
+    <div class="topbar2"><span class="brandmark">${icon('key')} Pick&amp;Drive</span><span class="link" onclick="logout()">Sign out</span></div>
     ${pending
       ? `<div class="card2"><b>Application under review</b><div class="p-sub">We're reviewing your documents and details. You'll be able to go online once approved.</div></div>`
       : `<div class="card2" style="display:flex;justify-content:space-between;align-items:center">
@@ -1092,7 +1092,7 @@ function scDriverHome() {
 function driverActiveCard(ride) {
   const nextLabel = { accepted: 'Mark arriving', arriving: 'Mark arrived', arrived: 'Start trip', in_progress: 'Complete trip' };
   return `<div class="card2">
-    <div style="display:flex;align-items:center;justify-content:space-between"><span class="pill">ACTIVE TRIP</span><button class="pill" style="border:0;cursor:pointer" onclick="openChat()">💬 ${ride.customer ? ride.customer.name : 'Rider'}</button></div>
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="pill">ACTIVE TRIP</span><button class="pill" style="border:0;cursor:pointer" onclick="openChat()">${icon('chat','i-sm')} ${ride.customer ? ride.customer.name : 'Rider'}</button></div>
     <div class="p-title" style="margin-top:8px;font-size:16px">PKR ${ride.calculated_fare} · ${ride.status.replace('_', ' ')}</div>
     <div class="p-sub">${ride.pickup_address} → ${ride.drop_address}</div>
     <button class="btn" style="margin-top:10px" onclick="advanceRideStatus()">${nextLabel[ride.status] || 'Update status'}</button>
@@ -1137,7 +1137,7 @@ function scDriverSettings() {
     </div>
     <div class="card2">
       <div class="field-label">Rating</div>
-      <div class="p-title" style="font-size:15px">⭐ ${u.rating || '—'}</div>
+      <div class="p-title" style="font-size:15px">${icon('star','i-sm')} ${u.rating || '—'}</div>
     </div>
     <p class="p-sub">Your account is secured by phone verification — there's no password to manage.</p>
     <button class="btn outline" onclick="logout()">Sign out</button>
@@ -1199,10 +1199,10 @@ function tabContent() {
 function driverShell() {
   return `${tabContent()}
   <div class="bottom-nav">
-    <button class="${state.driverTab === 'home' ? 'active' : ''}" onclick="loadDriverTab('home')">🚦<span>Home</span></button>
-    <button class="${state.driverTab === 'documents' ? 'active' : ''}" onclick="loadDriverTab('documents')">📄<span>Documents</span></button>
-    <button class="${state.driverTab === 'earnings' ? 'active' : ''}" onclick="loadDriverTab('earnings')">💰<span>Earnings</span></button>
-    <button class="${state.driverTab === 'settings' ? 'active' : ''}" onclick="loadDriverTab('settings')">⚙️<span>Settings</span></button>
+    <button class="${state.driverTab === 'home' ? 'active' : ''}" onclick="loadDriverTab('home')">${icon('home')}<span>Home</span></button>
+    <button class="${state.driverTab === 'documents' ? 'active' : ''}" onclick="loadDriverTab('documents')">${icon('file')}<span>Documents</span></button>
+    <button class="${state.driverTab === 'earnings' ? 'active' : ''}" onclick="loadDriverTab('earnings')">${icon('wallet')}<span>Earnings</span></button>
+    <button class="${state.driverTab === 'settings' ? 'active' : ''}" onclick="loadDriverTab('settings')">${icon('gear')}<span>Settings</span></button>
   </div>`;
 }
 const SCREENS = {
