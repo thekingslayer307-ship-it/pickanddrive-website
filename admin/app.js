@@ -528,7 +528,10 @@ async function saveDetail() {
     } else {
       const vehicle_model = ($('detailVehicle') && $('detailVehicle').value || '').trim();
       const plate_number = ($('detailPlate') && $('detailPlate').value || '').trim();
-      await AdminApi.updateDriver(d.id, { name, phone, vehicle_model, plate_number });
+      // Comfort tier sets the fare band and which requests dispatch may send
+      // this driver, so it is edited alongside the vehicle it describes.
+      const category = ($('detailCategory') && $('detailCategory').value || '').trim();
+      await AdminApi.updateDriver(d.id, { name, phone, vehicle_model, plate_number, ...(category ? { category } : {}) });
     }
     d.editing = false;
     notify('Saved');
@@ -594,6 +597,11 @@ function detailModal() {
           <div class="grid grid-2">
             <div class="field"><label>VEHICLE</label><input id="detailVehicle" value="${p.vehicle_model || ''}"></div>
             <div class="field"><label>PLATE</label><input id="detailPlate" value="${p.plate_number || ''}"></div>
+          </div>
+          <div class="field"><label>COMFORT CATEGORY</label>
+            <select id="detailCategory">
+              ${(state.settings.fare_settings || []).map((c) => `<option value="${c.category}" ${c.category === p.category ? 'selected' : ''}>${c.label}</option>`).join('')}
+            </select>
           </div>
           <button class="btn-primary" onclick="saveDetail()">Save changes</button>
         ` : `<button class="link-btn" onclick="startEditDetail()">${icon('edit', 12)} Edit profile</button>`}

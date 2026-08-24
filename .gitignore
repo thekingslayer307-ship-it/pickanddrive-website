@@ -8,3 +8,6 @@ src/**/*-source.png
 src/**/*-source.jpeg
 src/**/*-source.jpg
 
+
+# Test build binary — served from the VPS, not tracked
+download/*.apk

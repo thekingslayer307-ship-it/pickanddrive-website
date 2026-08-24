@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get the Pick&amp;Drive app</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Install the Pick&Drive test build for Android.">
+<link rel="icon" href="/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F4EFE4; --bg-alt:#EFE8D8; --bg-card:#FBF8F1;
+    --gold:#E3B24C; --gold-deep:#B4842A; --gold-ink:#2A1B04;
+    --ink:#241E12; --muted:#8C8168; --dim:#A69C82; --line:#E4DAC1;
+    --shadow:0 20px 44px rgba(70,50,10,0.14);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Plus Jakarta Sans",-apple-system,"Segoe UI",sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:660px; margin:0 auto; padding:40px 22px 72px}
+  header{display:flex; align-items:center; gap:12px; margin-bottom:44px}
+  header img{height:38px; width:auto}
+  .eyebrow{
+    font-size:11px; font-weight:800; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--gold-deep); margin:0 0 10px;
+  }
+  h1{font-family:"Fraunces",serif; font-weight:700; font-size:clamp(30px,6vw,44px); line-height:1.12; margin:0 0 14px}
+  .lede{font-size:16px; color:var(--muted); margin:0 0 30px; max-width:52ch}
+  .card{
+    background:var(--bg-card); border:1px solid var(--line); border-radius:20px;
+    padding:26px; box-shadow:var(--shadow); margin-bottom:22px;
+  }
+  .cta{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    background:var(--gold); color:var(--gold-ink); text-decoration:none;
+    font-weight:800; font-size:17px; padding:19px 24px; border-radius:14px;
+    border:1px solid var(--gold-deep); transition:transform .12s ease, filter .12s ease;
+  }
+  .cta:hover{filter:brightness(1.04); transform:translateY(-1px)}
+  .meta{
+    display:flex; flex-wrap:wrap; gap:8px 20px; justify-content:center;
+    margin-top:14px; font-size:12.5px; color:var(--dim);
+  }
+  h2{font-family:"Fraunces",serif; font-weight:600; font-size:20px; margin:0 0 6px}
+  ol{margin:0; padding-left:20px}
+  ol li{margin-bottom:11px}
+  ol li:last-child{margin-bottom:0}
+  code{
+    background:var(--bg-alt); border:1px solid var(--line); border-radius:6px;
+    padding:1px 6px; font-size:13px; font-family:ui-monospace,"Cascadia Mono",Menlo,monospace;
+  }
+  .note{
+    background:var(--bg-alt); border:1px solid var(--line); border-left:3px solid var(--gold-deep);
+    border-radius:12px; padding:16px 18px; font-size:14px; color:var(--muted); margin-top:22px;
+  }
+  .note strong{color:var(--ink)}
+  footer{margin-top:40px; font-size:12.5px; color:var(--dim); text-align:center}
+  footer a{color:var(--gold-deep)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="/src/codex%20generated%20graphics/brand/pick-and-drive-logo.png" alt="Pick&amp;Drive">
+  </header>
+
+  <p class="eyebrow">Android test build</p>
+  <h1>Install Pick&amp;Drive</h1>
+  <p class="lede">
+    This is a pre-release build for testing, not the Play Store version. Open this
+    page on the phone you want to install it on.
+  </p>
+
+  <div class="card">
+    <a class="cta" href="/download/pickanddrive.apk" download>Download the app</a>
+    <div class="meta">
+      <span>Version 1.0.0</span>
+      <span>Android 7.0 or newer</span>
+      <span>101 MB</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Installing</h2>
+    <ol>
+      <li>Tap <strong>Download the app</strong> above and wait for it to finish.</li>
+      <li>Open the downloaded file from your notifications or the <strong>Files</strong> app.</li>
+      <li>Android will ask whether to allow installs from this source — allow it for your browser, then go back and tap <strong>Install</strong>.</li>
+      <li>If Play Protect warns you about an unknown app, choose <strong>Install anyway</strong>. It shows this for any app not yet distributed through the Play Store.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Signing in</h2>
+    <p style="margin:0">
+      Enter any Pakistani mobile number. While SMS delivery is still being connected,
+      the 4-digit code is shown on the verification screen itself.
+    </p>
+  </div>
+
+  <div class="note">
+    <strong>Testing build.</strong> The sign-in code is visible in the app because no SMS
+    gateway is connected yet. Please don't share this link outside the testing group —
+    anyone with a phone number could sign in as another account until that is switched off.
+  </div>
+
+  <footer>
+    <a href="/">pickanddrive.pk</a> · <a href="/privacy.html">Privacy policy</a>
+  </footer>
+</div>
+</body>
+</html>
