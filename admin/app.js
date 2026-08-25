@@ -223,8 +223,8 @@ const AdminApi = {
     // this stays a no-op call placeholder until a real "force offline" admin endpoint is added.
     notify('Drivers control their own online status — this view is read-only for now');
   },
-  async issuePenalty(id) {
-    await apiRequest(`/admin/drivers/${id}/penalty`, { method: 'POST', body: { reason: 'Penalty issued from admin console' } });
+  async issuePenalty(id, reason) {
+    await apiRequest(`/admin/drivers/${id}/penalty`, { method: 'POST', body: { reason } });
     await AdminApi.refresh('drivers');
   },
   async approveDriver(id) {
@@ -559,7 +559,14 @@ function toggleDriverDocs(id) { state.expandedDriver = state.expandedDriver === 
 async function approveDriver(id) { try { await AdminApi.approveDriver(id); notify('Driver approved'); render(); } catch (e) { notify(e.message); } }
 async function suspendDriver(id) { try { await AdminApi.suspendDriver(id); notify('Driver suspended'); render(); } catch (e) { notify(e.message); } }
 async function verifyDoc(docId, status) { try { await AdminApi.verifyDocument(docId, status); notify(status === 'verified' ? 'Document verified' : 'Document rejected'); render(); } catch (e) { notify(e.message); } }
-async function issuePenalty(id) { try { await AdminApi.issuePenalty(id); notify('Penalty logged'); render(); } catch (e) { notify(e.message); } }
+async function issuePenalty(id) {
+  // The captain is sent this verbatim and it stands on their record, so it has
+  // to say what actually happened — every penalty used to read "Penalty issued
+  // from admin console", which tells them nothing and cannot be argued with.
+  const reason = (prompt('Why is this penalty being issued? The captain is shown this.') || '').trim();
+  if (!reason) return;
+  try { await AdminApi.issuePenalty(id, reason); notify('Penalty logged'); render(); } catch (e) { notify(e.message); }
+}
 
 /* ---- Customers tab ---- */
 function customersTab() {
