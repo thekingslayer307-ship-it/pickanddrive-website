@@ -2,6 +2,41 @@
    real Laravel API on the VPS. Every screen only reads/writes through AdminApi. */
 
 const API_BASE = 'https://api.pickanddrive.pk/api/v1';
+
+/**
+ * Dispatch only makes sense to captains who can actually reach the pickup.
+ * Sending a request across the city wastes the captain's time and leaves the
+ * rider waiting on someone who was never going to take it.
+ */
+const DISPATCH_RADIUS_KM = 15;
+
+function haversineKm(aLat, aLng, bLat, bLng) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+
+/** Online captains within range of a ride's pickup, nearest first. */
+function driversNearRide(drivers, ride) {
+  const lat = Number(ride.pickup_lat);
+  const lng = Number(ride.pickup_lng);
+  const knowPickup = Number.isFinite(lat) && Number.isFinite(lng);
+
+  return (drivers || [])
+    .map((driver) => {
+      const p = driver.driver_profile || {};
+      const dLat = Number(p.last_lat);
+      const dLng = Number(p.last_lng);
+      const known = knowPickup && Number.isFinite(dLat) && Number.isFinite(dLng);
+      return { driver, km: known ? haversineKm(lat, lng, dLat, dLng) : null };
+    })
+    // A captain with no fix still shows: better a manual judgement call than
+    // hiding the only person available.
+    .filter(({ km }) => km === null || km <= DISPATCH_RADIUS_KM)
+    .sort((a, b) => (a.km ?? Infinity) - (b.km ?? Infinity));
+}
 const GOOGLE_CLIENT_ID = ''; // TODO: fill in once a Google Cloud OAuth client exists
 const KEY = 'pickanddrive-admin-v1';
 
@@ -428,7 +463,7 @@ function dispatchTab() {
       <h2>PKR ${r.calculated_fare} · ${r.category}</h2>
       <p class="muted">${r.customer ? r.customer.name : 'Rider'} · ${r.pickup_address} → ${r.drop_address} · ${r.distance_km} km</p>
       <h3 style="margin:18px 0 10px;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase">Assign a driver</h3>
-      ${online.map((d) => `<div class="driver-row">${avatarChip(d.name, d.id, 44)}<div class="info"><b>${d.name}</b><small>★ ${d.rating} · ${d.driver_profile.vehicle_model || 'Vehicle'} · online</small></div><button class="btn-sm" onclick="assignDriver(${r.id},${d.id})">Assign</button></div>`).join('') || '<p class="muted">No drivers are online right now.</p>'}
+      ${driversNearRide(online, r).map(({ driver: d, km }) => `<div class="driver-row">${avatarChip(d.name, d.id, 44)}<div class="info"><b>${d.name}</b><small>★ ${d.rating} · ${d.driver_profile.vehicle_model || 'Vehicle'} · ${km === null ? 'location unknown' : km.toFixed(1) + ' km from pickup'}</small></div><button class="btn-sm" onclick="assignDriver(${r.id},${d.id})">Assign</button></div>`).join('') || `<p class="muted">No drivers online within ${DISPATCH_RADIUS_KM} km of this pickup.</p>`}
       <button class="pill-btn" style="margin-top:10px" onclick="cancelDispatchRide(${r.id})">Cancel this request</button>
     </div>`),
     ...dispatched.map((r) => `<div class="card dispatch-request">
