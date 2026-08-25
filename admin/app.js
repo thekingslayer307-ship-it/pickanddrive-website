@@ -72,6 +72,41 @@ const notify = (msg) => {
 };
 
 /* ---- Data layer: every network call to the real backend lives here ---- */
+/**
+ * Escapes a string so it cannot become markup.
+ *
+ * This panel renders with template literals straight into innerHTML, and a
+ * driver picks their own name at self-registration — no account needed. So
+ * "<img src=x onerror=...>" as a name was executable JavaScript the moment
+ * dispatch opened the Drivers tab, in a page that holds the admin token in
+ * localStorage. That is a full console takeover from an unauthenticated form.
+ */
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Escaped once here rather than at each of the ~60 interpolation sites, so a
+ * new screen cannot reintroduce the hole by forgetting. Entities decode back to
+ * the original text inside input values and on submit, so edit forms round-trip
+ * unchanged.
+ */
+function escapeDeep(value) {
+  if (typeof value === 'string') return escapeHtml(value);
+  if (Array.isArray(value)) return value.map(escapeDeep);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = escapeDeep(value[key]);
+    return out;
+  }
+  return value;
+}
+
 async function apiRequest(path, { method = 'GET', body } = {}) {
   const res = await fetch(API_BASE + path, {
     method,
@@ -91,7 +126,8 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
-  return data;
+
+  return escapeDeep(data);
 }
 
 const AdminApi = {

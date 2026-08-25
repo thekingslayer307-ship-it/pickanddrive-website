@@ -57,6 +57,35 @@ function toast(msg) {
 }
 
 /* ---- API layer ---- */
+/**
+ * Escapes a string so it cannot become markup.
+ *
+ * This app renders with template literals into innerHTML, and it shows the
+ * other party's name and their chat messages. A captain choosing their own name
+ * at self-registration, or typing a message mid-trip, could therefore run
+ * script in a rider's browser — and the session token lives in this page.
+ */
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Escaped once at the boundary so no render site has to remember. */
+function escapeDeep(value) {
+  if (typeof value === 'string') return escapeHtml(value);
+  if (Array.isArray(value)) return value.map(escapeDeep);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = escapeDeep(value[key]);
+    return out;
+  }
+  return value;
+}
+
 async function apiRequest(path, { method = 'GET', body } = {}) {
   const res = await fetch(API_BASE + path, {
     method,
@@ -70,7 +99,8 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
   if (res.status === 401) { logout(); throw new Error('Session expired — please sign in again'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
-  return data;
+
+  return escapeDeep(data);
 }
 
 async function apiUpload(path, formData) {
@@ -82,7 +112,8 @@ async function apiUpload(path, formData) {
   if (res.status === 401) { logout(); throw new Error('Session expired — please sign in again'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
-  return data;
+
+  return escapeDeep(data);
 }
 
 /* Photon (OSM data, free, no API key) rather than Nominatim: Nominatim does exact-token
