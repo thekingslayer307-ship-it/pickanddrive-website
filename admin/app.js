@@ -18,6 +18,44 @@ function haversineKm(aLat, aLng, bLat, bLng) {
   return 2 * 6371 * Math.asin(Math.sqrt(h));
 }
 
+/*
+ * How long a captain's last position stays trustworthy.
+ *
+ * This has to match DispatchController::LOCATION_STALE_AFTER_MINUTES on the
+ * server. It did not, and nothing in this panel applied it at all: a captain
+ * who closed the app yesterday still showed a green "Online" badge, still
+ * appeared in the assign list, and still sat on the live map as "available".
+ * Dispatch and the rider's availability check both ignored them, so a
+ * dispatcher could assign a ride to someone who had been gone for a day and
+ * watch the rider wait out the whole window for nobody.
+ */
+const LOCATION_STALE_AFTER_MINUTES = 5;
+
+/** Minutes since a captain's app last reported in, or null if it never has. */
+function minutesSinceFix(profile) {
+  const at = profile && profile.last_location_at;
+  if (!at) return null;
+  const t = new Date(at).getTime();
+  if (!Number.isFinite(t)) return null;
+  return (Date.now() - t) / 60000;
+}
+
+/** Flagged online AND actually reporting in — the only captains dispatch can use. */
+function isLive(profile) {
+  if (!profile || !profile.online) return false;
+  const mins = minutesSinceFix(profile);
+  return mins !== null && mins <= LOCATION_STALE_AFTER_MINUTES;
+}
+
+/** "34h ago" / "12m ago" — short enough for a table cell. */
+function agoLabel(mins) {
+  if (mins === null) return 'no fix yet';
+  if (mins < 1) return 'just now';
+  if (mins < 60) return Math.round(mins) + 'm ago';
+  if (mins < 60 * 48) return Math.round(mins / 60) + 'h ago';
+  return Math.round(mins / 1440) + 'd ago';
+}
+
 /** Online captains within range of a ride's pickup, nearest first. */
 function driversNearRide(drivers, ride) {
   const lat = Number(ride.pickup_lat);
@@ -30,12 +68,14 @@ function driversNearRide(drivers, ride) {
       const dLat = Number(p.last_lat);
       const dLng = Number(p.last_lng);
       const known = knowPickup && Number.isFinite(dLat) && Number.isFinite(dLng);
-      return { driver, km: known ? haversineKm(lat, lng, dLat, dLng) : null };
+      return { driver, km: known ? haversineKm(lat, lng, dLat, dLng) : null, live: isLive(p), mins: minutesSinceFix(p) };
     })
     // A captain with no fix still shows: better a manual judgement call than
-    // hiding the only person available.
+    // hiding the only person available. Stale ones show too, but labelled and
+    // sorted below everyone who is actually reporting in — assigning to one is
+    // a decision the dispatcher should make on purpose, not by accident.
     .filter(({ km }) => km === null || km <= DISPATCH_RADIUS_KM)
-    .sort((a, b) => (a.km ?? Infinity) - (b.km ?? Infinity));
+    .sort((a, b) => (b.live - a.live) || ((a.km ?? Infinity) - (b.km ?? Infinity)));
 }
 const GOOGLE_CLIENT_ID = ''; // TODO: fill in once a Google Cloud OAuth client exists
 const KEY = 'pickanddrive-admin-v1';
@@ -58,6 +98,7 @@ function seedState() {
     withdrawals: [], complaints: [],
     liveMapRides: [], liveMapOnlineDrivers: [],
     reportRides: { data: [] }, revenueReport: null, reportFilters: { status: '', category: '', from: '', to: '' },
+    surgeRules: [], demandRatio: 0, demandMultiplier: 1,
   };
 }
 
@@ -152,6 +193,7 @@ const AdminApi = {
       settings: ['/admin/settings', (v) => { state.settings = v; }],
       withdrawals: ['/admin/withdrawals', (v) => { state.withdrawals = v; }],
       complaints: ['/admin/complaints', (v) => { state.complaints = v; }],
+      surgeRules: ['/admin/surge-rules', (v) => { state.surgeRules = v.rules; state.demandRatio = v.current_demand_ratio; state.demandMultiplier = v.current_demand_multiplier; }],
     };
     const wanted = keys.length ? keys : Object.keys(SLICES);
     await Promise.all(wanted.map(async (k) => {
@@ -223,9 +265,30 @@ const AdminApi = {
     // this stays a no-op call placeholder until a real "force offline" admin endpoint is added.
     notify('Drivers control their own online status — this view is read-only for now');
   },
-  async issuePenalty(id, reason) {
-    await apiRequest(`/admin/drivers/${id}/penalty`, { method: 'POST', body: { reason } });
+  async issuePenalty(id, reason, amount) {
+    const body = amount ? { reason, amount } : { reason };
+    await apiRequest(`/admin/drivers/${id}/penalty`, { method: 'POST', body });
     await AdminApi.refresh('drivers');
+  },
+  async issueBonus(id, amount, reason) {
+    await apiRequest(`/admin/drivers/${id}/bonus`, { method: 'POST', body: { amount, reason } });
+    await AdminApi.refresh('drivers');
+  },
+  async clearGpsFlag(id) {
+    await apiRequest(`/admin/drivers/${id}/clear-gps-flag`, { method: 'POST' });
+    await AdminApi.refresh('drivers');
+  },
+  async createSurgeRule(body) {
+    await apiRequest('/admin/surge-rules', { method: 'POST', body });
+    await AdminApi.refresh('surgeRules');
+  },
+  async toggleSurgeRule(id, active) {
+    await apiRequest(`/admin/surge-rules/${id}`, { method: 'PATCH', body: { active } });
+    await AdminApi.refresh('surgeRules');
+  },
+  async deleteSurgeRule(id) {
+    await apiRequest(`/admin/surge-rules/${id}`, { method: 'DELETE' });
+    await AdminApi.refresh('surgeRules');
   },
   async approveDriver(id) {
     await apiRequest(`/admin/drivers/${id}/approve`, { method: 'POST' });
@@ -307,6 +370,8 @@ const ICONS = {
   complaints: '<path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4A9 9 0 0 1 4 20l-1 1 1-4A8.4 8.4 0 1 1 21 11.5Z"/>',
   reports: '<path d="M4 20V10M12 20V4M20 20v-7"/>',
   map: '<path d="m9 4-6 2v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/>',
+  car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
+  star: '<path d="M11.5 2.9a.55.55 0 0 1 1 0l2.4 4.9 5.4.8a.55.55 0 0 1 .3.94l-3.9 3.8.92 5.4a.55.55 0 0 1-.8.58L12 16.8l-4.83 2.5a.55.55 0 0 1-.8-.57l.92-5.4-3.9-3.8a.55.55 0 0 1 .3-.94l5.4-.8z"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
@@ -315,6 +380,7 @@ const ICONS = {
   bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"/><path d="M10 21h4"/>',
   inbox: '<path d="m22 12-4 0-2 3h-8l-2-3-4 0"/><path d="M5.5 5.5h13l3.5 6.5v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-7l3.5-6.5Z"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8"/><path d="M16.5 8a2.5 2.5 0 0 0 0-5C14 3 12 8 12 8"/>',
 };
 function icon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
@@ -487,6 +553,9 @@ function tabContent() {
 function dispatchTab() {
   const pending = state.dispatch.pending || [];
   const dispatched = state.dispatch.dispatched || [];
+  // Everyone flagged online, live or not — driversNearRide() labels and ranks
+  // them, so the dispatcher sees the stale ones rather than wondering where a
+  // captain went.
   const online = state.drivers.filter((d) => d.driver_profile && d.driver_profile.online);
 
   if (!pending.length && !dispatched.length) {
@@ -499,7 +568,7 @@ function dispatchTab() {
       <h2>PKR ${r.calculated_fare} · ${r.category}</h2>
       <p class="muted">${r.customer ? r.customer.name : 'Rider'} · ${r.pickup_address} → ${r.drop_address} · ${r.distance_km} km</p>
       <h3 style="margin:18px 0 10px;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase">Assign a driver</h3>
-      ${driversNearRide(online, r).map(({ driver: d, km }) => `<div class="driver-row">${avatarChip(d.name, d.id, 44)}<div class="info"><b>${d.name}</b><small>★ ${d.rating} · ${d.driver_profile.vehicle_model || 'Vehicle'} · ${km === null ? 'location unknown' : km.toFixed(1) + ' km from pickup'}</small></div><button class="btn-sm" onclick="assignDriver(${r.id},${d.id})">Assign</button></div>`).join('') || `<p class="muted">No drivers online within ${DISPATCH_RADIUS_KM} km of this pickup.</p>`}
+      ${driversNearRide(online, r).map(({ driver: d, km, live, mins }) => `<div class="driver-row"${live ? '' : ' style="opacity:.62"'}>${avatarChip(d.name, d.id, 44)}<div class="info"><b>${d.name}</b>${live ? '' : ` <span class="badge off" title="Their app has not reported a position recently — they may have closed it">NO SIGNAL · ${agoLabel(mins)}</span>`}<small>${icon('star', 10)} ${d.rating} · ${d.driver_profile.vehicle_model || 'Vehicle'} · ${km === null ? 'location unknown' : km.toFixed(1) + ' km from pickup'}${live ? '' : ' (last known)'}</small></div><button class="btn-sm" onclick="assignDriver(${r.id},${d.id})">Assign</button></div>`).join('') || `<p class="muted">No drivers online within ${DISPATCH_RADIUS_KM} km of this pickup.</p>`}
       <button class="pill-btn" style="margin-top:10px" onclick="cancelDispatchRide(${r.id})">Cancel this request</button>
     </div>`),
     ...dispatched.map((r) => `<div class="card dispatch-request">
@@ -518,14 +587,21 @@ async function cancelDispatchRide(rideId) { try { await AdminApi.cancelRide(ride
 const DOC_LABELS = { cnic_front: 'CNIC — Front', cnic_back: 'CNIC — Back', license: 'Driving License', vehicle_reg: 'Vehicle Registration', selfie: 'Selfie' };
 function driversTab() {
   if (!state.drivers.length) return `<div class="empty-state">${icon('drivers', 40)}<h2>No drivers yet</h2><p>Driver accounts will appear here once they sign up.</p></div>`;
-  return `<div class="card"><table class="data-table"><thead><tr><th>Driver</th><th>Account</th><th>Online</th><th>Rating</th><th>Strikes</th><th></th></tr></thead><tbody>
+  return `<div class="card"><table class="data-table"><thead><tr><th>Driver</th><th>Account</th><th>Online</th><th>Rating</th><th>Performance</th><th>Strikes</th><th></th></tr></thead><tbody>
     ${state.drivers.map((d) => { const p = d.driver_profile || {}; const docs = d.driver_documents || [];
       const accountBadge = d.status === 'active' ? '<span class="badge on">Active</span>' : d.status === 'suspended' ? '<span class="badge off">Suspended</span>' : '<span class="badge warn">Pending approval</span>';
+      const gpsFlagged = p.gps_integrity_status === 'flagged';
       return `<tr class="clickable" onclick="openDetail('driver',${d.id})">
       <td data-label="Driver"><div class="table-driver">${avatarChip(d.name, d.id)}<div><b>${d.name}</b><small style="color:var(--muted)">${p.vehicle_model || '—'} · ${p.plate_number || '—'} · ${p.category || '—'}</small></div></div></td>
-      <td data-label="Account">${accountBadge}</td>
-      <td data-label="Online"><span class="badge ${p.online ? 'on' : 'off'}">${p.online ? 'Online' : 'Offline'}</span></td>
-      <td data-label="Rating">${d.rating} ★</td>
+      <td data-label="Account">${accountBadge}${gpsFlagged ? ' <span class="badge off" title="This driver reported a mocked/spoofed GPS location and cannot be dispatched until an admin reviews and clears it">GPS flagged</span>' : ''}</td>
+      <td data-label="Online">${(() => {
+        if (!p.online) return '<span class="badge off">Offline</span>';
+        if (isLive(p)) return '<span class="badge on">Online</span>';
+        // Flagged online but silent: the app was killed rather than switched off.
+        return `<span class="badge off" title="Marked online, but their app has not reported a position recently">No signal · ${agoLabel(minutesSinceFix(p))}</span>`;
+      })()}</td>
+      <td data-label="Rating">${d.rating} ${icon('star', 11)}</td>
+      <td data-label="Performance"><small>${p.acceptance_rate ?? 100}% accepted<br>${p.cancellation_rate ?? 0}% cancelled</small></td>
       <td data-label="Strikes">${p.strikes ?? 0}</td>
       <td data-label="">
         <div class="action-group">
@@ -533,10 +609,12 @@ function driversTab() {
         ${d.status === 'pending_approval' ? `<button class="link-btn primary" onclick="event.stopPropagation();approveDriver(${d.id})">${icon('check', 12)} Approve</button>` : ''}
         ${d.status !== 'suspended' ? `<button class="link-btn danger" onclick="event.stopPropagation();suspendDriver(${d.id})">${icon('pause', 12)} Suspend</button>` : `<button class="link-btn primary" onclick="event.stopPropagation();approveDriver(${d.id})">${icon('check', 12)} Reactivate</button>`}
         <button class="link-btn" onclick="event.stopPropagation();issuePenalty(${d.id})">${icon('alert', 12)} Penalty</button>
+        <button class="link-btn primary" onclick="event.stopPropagation();issueBonus(${d.id})">${icon('gift', 12)} Bonus</button>
+        ${gpsFlagged ? `<button class="link-btn primary" onclick="event.stopPropagation();clearGpsFlag(${d.id})">${icon('check', 12)} Clear GPS flag</button>` : ''}
         </div>
       </td>
     </tr>
-    ${state.expandedDriver === d.id ? `<tr><td colspan="6" class="docs-row" style="padding:0 0 16px 2px"><div class="grid grid-3" style="gap:10px">
+    ${state.expandedDriver === d.id ? `<tr><td colspan="7" class="docs-row" style="padding:0 0 16px 2px"><div class="grid grid-3" style="gap:10px">
       ${Object.keys(DOC_LABELS).map((type) => {
         const doc = docs.find((x) => x.type === type);
         if (!doc) return `<div class="doc-card empty">${icon('image', 26)}<span>Not uploaded</span></div>`;
@@ -565,7 +643,23 @@ async function issuePenalty(id) {
   // from admin console", which tells them nothing and cannot be argued with.
   const reason = (prompt('Why is this penalty being issued? The captain is shown this.') || '').trim();
   if (!reason) return;
-  try { await AdminApi.issuePenalty(id, reason); notify('Penalty logged'); render(); } catch (e) { notify(e.message); }
+  // Most penalties are a warning with no money attached — leaving this blank
+  // (rather than defaulting to some fixed fine) keeps that the common case.
+  const amountRaw = (prompt('Deduct an amount from their wallet? Leave blank for a warning with no deduction.') || '').trim();
+  const amount = amountRaw ? Math.max(0, parseInt(amountRaw, 10) || 0) : 0;
+  try { await AdminApi.issuePenalty(id, reason, amount); notify(amount ? `Penalty logged, PKR ${amount} deducted` : 'Penalty logged'); render(); } catch (e) { notify(e.message); }
+}
+async function issueBonus(id) {
+  const amountRaw = (prompt('Bonus amount (PKR)?') || '').trim();
+  const amount = parseInt(amountRaw, 10);
+  if (!amount || amount <= 0) return;
+  const reason = (prompt('What is this bonus for? The captain is shown this.') || '').trim();
+  if (!reason) return;
+  try { await AdminApi.issueBonus(id, amount, reason); notify(`PKR ${amount} bonus credited`); render(); } catch (e) { notify(e.message); }
+}
+async function clearGpsFlag(id) {
+  if (!confirm('Clear this driver\'s GPS spoofing flag? Only do this once you\'ve actually looked into it — they can be dispatched again immediately.')) return;
+  try { await AdminApi.clearGpsFlag(id); notify('GPS flag cleared'); render(); } catch (e) { notify(e.message); }
 }
 
 /* ---- Customers tab ---- */
@@ -575,7 +669,7 @@ function customersTab() {
     ${state.customers.map((c) => `<tr class="clickable" onclick="openDetail('customer',${c.id})">
       <td data-label="Customer"><div class="table-driver">${avatarChip(c.name, c.id)}<b>${c.name}</b></div></td>
       <td data-label="Rides">${c.rides}</td>
-      <td data-label="Rating">${c.rating} ★</td>
+      <td data-label="Rating">${c.rating} ${icon('star', 11)}</td>
       <td data-label="Status"><span class="badge ${c.blocked ? 'off' : 'on'}">${c.blocked ? 'Blocked' : 'Active'}</span></td>
       <td data-label=""><div class="action-group"><button class="link-btn ${c.blocked ? 'primary' : 'danger'}" onclick="event.stopPropagation();toggleBlacklist(${c.id},${c.blocked})">${icon(c.blocked ? 'check' : 'pause', 12)} ${c.blocked ? 'Unblock' : 'Block'}</button></div></td>
     </tr>`).join('')}
@@ -634,7 +728,7 @@ function detailModal() {
       <div class="modal-body">
         <div class="modal-stat-row">
           <div class="stat-box"><small>Rides</small><b>${c.rides}</b></div>
-          <div class="stat-box"><small>Rating</small><b>${c.rating} ★</b></div>
+          <div class="stat-box"><small>Rating</small><b>${c.rating} ${icon('star', 11)}</b></div>
           <div class="stat-box"><small>Status</small><b style="color:${c.blocked ? '#e08a7d' : '#7fd39a'}">${c.blocked ? 'Blocked' : 'Active'}</b></div>
         </div>
         <div class="modal-section">
@@ -663,7 +757,7 @@ function detailModal() {
     <div class="modal-head">${avatarChip(dr.name, dr.id, 46)}<div><h2>${dr.name}</h2><small>${dr.phone || 'No phone on file'} · ${p.vehicle_model || 'No vehicle'}</small></div><button class="modal-close" onclick="closeDetail()">${icon('x', 16)}</button></div>
     <div class="modal-body">
       <div class="modal-stat-row">
-        <div class="stat-box"><small>Rating</small><b>${dr.rating} ★</b></div>
+        <div class="stat-box"><small>Rating</small><b>${dr.rating} ${icon('star', 11)}</b></div>
         <div class="stat-box"><small>Wallet</small><b>PKR ${p.wallet_balance ?? 0}</b></div>
         <div class="stat-box"><small>Strikes</small><b>${p.strikes ?? 0}</b></div>
       </div>
@@ -776,10 +870,46 @@ async function broadcastAnnouncement() {
 function commissionTab() {
   return `<div class="grid grid-3">
     <div class="card commission-hero"><small>PLATFORM COMMISSION</small><h2>${Math.round(state.settings.commission_rate * 100)}%</h2><div class="stepper-row"><button onclick="setCommission(-0.01)">−1%</button><button onclick="setCommission(0.01)">+1%</button></div></div>
-    <div class="card commission-hero"><small>SURGE MULTIPLIER</small><h2>${state.settings.surge_multiplier}×</h2><div class="stepper-row"><button onclick="setSurge(-0.1)">−0.1</button><button onclick="setSurge(0.1)">+0.1</button></div></div>
+    <div class="card commission-hero"><small>MANUAL SURGE DIAL</small><h2>${state.settings.surge_multiplier}×</h2><div class="stepper-row"><button onclick="setSurge(-0.1)">−0.1</button><button onclick="setSurge(0.1)">+0.1</button></div></div>
     <div class="card stat-card"><small>TOTAL COMMISSION COLLECTED</small><b>PKR ${(state.settings.total_commission_collected || 0).toLocaleString()}</b><span>Across all completed rides</span></div>
   </div>
-  <div class="card" style="margin-top:14px"><p class="muted">Commission is applied automatically to every completed ride before it's added to the driver's wallet. Surge is shown to riders as a badge and folded into the suggested fare above 1×.</p></div>
+  <div class="card" style="margin-top:14px"><p class="muted">Commission is applied automatically to every completed ride before it's added to the driver's wallet. The fare a rider is quoted multiplies this manual dial by any scheduled peak-hour rule below and by live demand — not the highest of the three, all three together.</p></div>
+  <div class="card" style="margin-top:14px">
+    <h3>Live demand right now</h3>
+    <p class="muted">Pending rides per available captain, platform-wide. Above 1.0 there are more riders waiting than free captains, and this adds a small automatic multiplier on top of the two levers below — capped at 1.6× on its own so it never runs away.</p>
+    <div class="grid grid-2" style="margin-top:10px">
+      <div class="card stat-card"><small>WAITING-TO-AVAILABLE RATIO</small><b>${state.demandRatio}</b></div>
+      <div class="card stat-card"><small>CURRENT DEMAND MULTIPLIER</small><b>${state.demandMultiplier}×</b></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3>Scheduled peak-hour surge</h3>
+    <p class="muted">Rules for times you already know are busy — Friday evenings, Eid week — rather than raising the manual dial and forgetting to lower it. Several rules can be active for the same slot; the highest matching multiplier applies.</p>
+    <div class="grid grid-4" style="margin-top:10px;align-items:end">
+      <div class="field"><label>LABEL</label><input id="surgeLabel" placeholder="Evening rush"></div>
+      <div class="field"><label>DAY</label><select id="surgeDay">
+        <option value="">Every day</option>
+        ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => `<option value="${i}">${d}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>START</label><input id="surgeStart" type="time" value="17:00"></div>
+      <div class="field"><label>END</label><input id="surgeEnd" type="time" value="20:00"></div>
+    </div>
+    <div class="field" style="max-width:180px"><label>MULTIPLIER</label><input id="surgeMultiplier" type="number" step="0.1" min="1" max="3" value="1.3"></div>
+    <button class="pill-btn gold" onclick="addSurgeRule()">Add rule</button>
+    ${state.surgeRules.length ? `<table class="data-table" style="margin-top:14px"><thead><tr><th>Rule</th><th>When</th><th>Multiplier</th><th></th></tr></thead><tbody>
+      ${state.surgeRules.map((r) => `<tr>
+        <td data-label="Rule">${r.label}</td>
+        <td data-label="When">${r.day_of_week === null ? 'Every day' : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][r.day_of_week]}, ${r.start_time.slice(0, 5)}–${r.end_time.slice(0, 5)}</td>
+        <td data-label="Multiplier">${r.multiplier}×</td>
+        <td data-label="">
+          <div class="action-group">
+            <button class="link-btn" onclick="toggleSurgeRuleRow(${r.id},${!r.active})">${r.active ? 'Pause' : 'Resume'}</button>
+            <button class="link-btn danger" onclick="deleteSurgeRuleRow(${r.id})">${icon('x', 12)} Remove</button>
+          </div>
+        </td>
+      </tr>`).join('')}
+    </tbody></table>` : '<p class="muted" style="margin-top:10px">No scheduled rules yet — surge is just the manual dial and live demand.</p>'}
+  </div>
   <div class="card" style="margin-top:14px">
     <h3>SOS safety contact number</h3>
     <p class="muted">The number a rider's SOS button dials directly. This is a phone shortcut, not a monitored live emergency line — defaults to Pakistan's national emergency number (1122) unless changed.</p>
@@ -789,6 +919,23 @@ function commissionTab() {
 }
 async function setCommission(delta) { try { await AdminApi.setCommission(delta); render(); } catch (e) { notify(e.message); } }
 async function setSurge(delta) { try { await AdminApi.setSurge(delta); render(); } catch (e) { notify(e.message); } }
+async function addSurgeRule() {
+  const label = (document.getElementById('surgeLabel').value || '').trim();
+  const dayRaw = document.getElementById('surgeDay').value;
+  const start_time = document.getElementById('surgeStart').value;
+  const end_time = document.getElementById('surgeEnd').value;
+  const multiplier = parseFloat(document.getElementById('surgeMultiplier').value);
+  if (!label) return notify('Give the rule a label');
+  if (!start_time || !end_time) return notify('Set a start and end time');
+  if (!multiplier || multiplier < 1) return notify('Multiplier must be at least 1');
+  try {
+    await AdminApi.createSurgeRule({ label, day_of_week: dayRaw === '' ? null : parseInt(dayRaw, 10), start_time, end_time, multiplier });
+    notify('Surge rule added');
+    render();
+  } catch (e) { notify(e.message); }
+}
+async function toggleSurgeRuleRow(id, active) { try { await AdminApi.toggleSurgeRule(id, active); render(); } catch (e) { notify(e.message); } }
+async function deleteSurgeRuleRow(id) { if (!confirm('Remove this surge rule?')) return; try { await AdminApi.deleteSurgeRule(id); render(); } catch (e) { notify(e.message); } }
 async function saveSafetyContact() {
   const number = (document.getElementById('safetyContactInput').value || '').trim();
   if (!number) return notify('Enter a phone number');
@@ -819,7 +966,7 @@ function initAdminLiveMap() {
     const dp = r.driver && r.driver.driver_profile;
     if (dp && dp.last_lat && dp.last_lng) {
       const pos = [+dp.last_lat, +dp.last_lng];
-      adminLiveMapMarkers['d' + r.id] = L.marker(pos, { icon: L.divIcon({ className: '', html: `<div style="width:26px;height:26px;border-radius:50%;background:#e3b24c;border:3px solid #2a1305;display:flex;align-items:center;justify-content:center;font-size:13px">🚗</div>`, iconSize: [26, 26] }) })
+      adminLiveMapMarkers['d' + r.id] = L.marker(pos, { icon: L.divIcon({ className: '', html: `<div style="width:26px;height:26px;border-radius:50%;background:#e3b24c;border:3px solid #2a1305;display:flex;align-items:center;justify-content:center;color:#2a1305">${icon('car', 14)}</div>`, iconSize: [26, 26] }) })
         .addTo(adminLiveMap).bindPopup(`<b>${r.driver.name}</b><br>${r.customer ? r.customer.name : ''}<br>${r.pickup_address} → ${r.drop_address}<br>Status: ${r.status}`);
       bounds.push(pos);
     }
@@ -832,8 +979,12 @@ function initAdminLiveMap() {
     const dp = d.driver_profile;
     if (dp && dp.last_lat && dp.last_lng) {
       const pos = [+dp.last_lat, +dp.last_lng];
-      adminLiveMapMarkers['o' + d.id] = L.marker(pos, { icon: L.divIcon({ className: '', html: `<div style="width:22px;height:22px;border-radius:50%;background:#4c8b5d;border:3px solid #1f3d26;display:flex;align-items:center;justify-content:center;font-size:11px">🟢</div>`, iconSize: [22, 22] }) })
-        .addTo(adminLiveMap).bindPopup(`<b>${d.name}</b><br>Online — available<br>${dp.vehicle_model || ''} ${dp.plate_number || ''}`);
+      // A stale pin is a place a captain used to be, not where they are. Drawing
+      // it the same as a live one invites a dispatcher to send a rider there.
+      const live = isLive(dp);
+      const mins = minutesSinceFix(dp);
+      adminLiveMapMarkers['o' + d.id] = L.marker(pos, { opacity: live ? 1 : 0.45, icon: L.divIcon({ className: '', html: `<div style="width:22px;height:22px;border-radius:50%;background:${live ? '#4c8b5d' : '#5c5c5c'};border:3px solid ${live ? '#1f3d26' : '#333'};display:flex;align-items:center;justify-content:center;color:${live ? '#eaf5ee' : '#d0d0d0'}">${icon('car', 12)}</div>`, iconSize: [22, 22] }) })
+        .addTo(adminLiveMap).bindPopup(`<b>${d.name}</b><br>${live ? 'Online — available' : 'No signal — last seen ' + agoLabel(mins)}<br>${dp.vehicle_model || ''} ${dp.plate_number || ''}`);
       bounds.push(pos);
     }
   });

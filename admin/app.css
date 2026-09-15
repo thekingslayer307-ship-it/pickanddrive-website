@@ -63,9 +63,10 @@ a{color:inherit}
 
 .content{flex:1;padding:24px 28px 60px;overflow-y:auto}
 .grid{display:grid;gap:14px}
+.grid-4{grid-template-columns:repeat(4,1fr)}
 .grid-3{grid-template-columns:repeat(3,1fr)}
 .grid-2{grid-template-columns:repeat(2,1fr)}
-@media(max-width:900px){.grid-3{grid-template-columns:1fr}.grid-2{grid-template-columns:1fr}}
+@media(max-width:900px){.grid-4{grid-template-columns:1fr 1fr}.grid-3{grid-template-columns:1fr}.grid-2{grid-template-columns:1fr}}
 
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:0 1px 0 #ffffff05 inset,0 12px 30px -18px #000000a0}
 .card h3{font-size:12.5px;margin:0 0 16px;color:var(--ink);letter-spacing:.2px}
