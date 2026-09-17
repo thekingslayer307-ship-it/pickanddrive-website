@@ -567,14 +567,16 @@ function dispatchTab() {
       <span class="status-pill">NEW REQUEST · AWAITING DISPATCH</span>
       <h2>PKR ${r.calculated_fare} · ${r.category}</h2>
       <p class="muted">${r.customer ? r.customer.name : 'Rider'} · ${r.pickup_address} → ${r.drop_address} · ${r.distance_km} km</p>
+      ${r.proposed_fare ? `<span class="badge warn" title="Rider proposed a fare when booking">Rider offered PKR ${r.proposed_fare}</span>` : ''}
       <h3 style="margin:18px 0 10px;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase">Assign a driver</h3>
       ${driversNearRide(online, r).map(({ driver: d, km, live, mins }) => `<div class="driver-row"${live ? '' : ' style="opacity:.62"'}>${avatarChip(d.name, d.id, 44)}<div class="info"><b>${d.name}</b>${live ? '' : ` <span class="badge off" title="Their app has not reported a position recently — they may have closed it">NO SIGNAL · ${agoLabel(mins)}</span>`}<small>${icon('star', 10)} ${d.rating} · ${d.driver_profile.vehicle_model || 'Vehicle'} · ${km === null ? 'location unknown' : km.toFixed(1) + ' km from pickup'}${live ? '' : ' (last known)'}</small></div><button class="btn-sm" onclick="assignDriver(${r.id},${d.id})">Assign</button></div>`).join('') || `<p class="muted">No drivers online within ${DISPATCH_RADIUS_KM} km of this pickup.</p>`}
       <button class="pill-btn" style="margin-top:10px" onclick="cancelDispatchRide(${r.id})">Cancel this request</button>
     </div>`),
     ...dispatched.map((r) => `<div class="card dispatch-request">
-      <span class="status-pill">WAITING ON DRIVER RESPONSE</span>
+      <span class="status-pill">${r.proposed_fare ? 'NEGOTIATING FARE' : 'WAITING ON DRIVER RESPONSE'}</span>
       <h2>Dispatched to ${r.driver ? r.driver.name : 'driver'}</h2>
       <p class="muted">${r.pickup_address} → ${r.drop_address} · PKR ${r.calculated_fare}</p>
+      ${r.proposed_fare ? `<span class="badge warn">${r.proposed_by === 'driver' ? 'Driver' : 'Rider'} last offered PKR ${r.proposed_fare} — awaiting ${r.proposed_by === 'driver' ? 'rider' : 'driver'}</span>` : ''}
       <button class="pill-btn" onclick="reassignRide(${r.id})">Reassign to a different driver</button>
     </div>`),
   ].join('');
