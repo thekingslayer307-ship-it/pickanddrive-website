@@ -381,6 +381,7 @@ const ICONS = {
   inbox: '<path d="m22 12-4 0-2 3h-8l-2-3-4 0"/><path d="M5.5 5.5h13l3.5 6.5v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-7l3.5-6.5Z"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8"/><path d="M16.5 8a2.5 2.5 0 0 0 0-5C14 3 12 8 12 8"/>',
+  cart: '<path d="M6 7V5a4 4 0 0 1 8 0v2"/><rect x="4" y="7" width="16" height="14" rx="2"/>',
 };
 function icon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
@@ -567,6 +568,7 @@ function dispatchTab() {
       <span class="status-pill">NEW REQUEST · AWAITING DISPATCH</span>
       <h2>PKR ${r.calculated_fare} · ${r.category}</h2>
       <p class="muted">${r.customer ? r.customer.name : 'Rider'} · ${r.pickup_address} → ${r.drop_address} · ${r.distance_km} km</p>
+      ${r.category === 'groceries' && r.notes ? `<p class="muted" style="background:var(--panel-2);padding:8px 10px;border-radius:8px"><b style="color:var(--ink)">Shopping list:</b> ${escapeHtml(r.notes)}</p>` : ''}
       ${r.proposed_fare ? `<span class="badge warn" title="Rider proposed a fare when booking">Rider offered PKR ${r.proposed_fare}</span>` : ''}
       <h3 style="margin:18px 0 10px;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase">Assign a driver</h3>
       ${driversNearRide(online, r).map(({ driver: d, km, live, mins }) => `<div class="driver-row"${live ? '' : ' style="opacity:.62"'}>${avatarChip(d.name, d.id, 44)}<div class="info"><b>${d.name}</b>${live ? '' : ` <span class="badge off" title="Their app has not reported a position recently — they may have closed it">NO SIGNAL · ${agoLabel(mins)}</span>`}<small>${icon('star', 10)} ${d.rating} · ${d.driver_profile.vehicle_model || 'Vehicle'} · ${km === null ? 'location unknown' : km.toFixed(1) + ' km from pickup'}${live ? '' : ' (last known)'}</small></div><button class="btn-sm" onclick="assignDriver(${r.id},${d.id})">Assign</button></div>`).join('') || `<p class="muted">No drivers online within ${DISPATCH_RADIUS_KM} km of this pickup.</p>`}
@@ -576,6 +578,7 @@ function dispatchTab() {
       <span class="status-pill">${r.proposed_fare ? 'NEGOTIATING FARE' : 'WAITING ON DRIVER RESPONSE'}</span>
       <h2>Dispatched to ${r.driver ? r.driver.name : 'driver'}</h2>
       <p class="muted">${r.pickup_address} → ${r.drop_address} · PKR ${r.calculated_fare}</p>
+      ${r.category === 'groceries' && r.notes ? `<p class="muted" style="background:var(--panel-2);padding:8px 10px;border-radius:8px"><b style="color:var(--ink)">Shopping list:</b> ${escapeHtml(r.notes)}</p>` : ''}
       ${r.proposed_fare ? `<span class="badge warn">${r.proposed_by === 'driver' ? 'Driver' : 'Rider'} last offered PKR ${r.proposed_fare} — awaiting ${r.proposed_by === 'driver' ? 'rider' : 'driver'}</span>` : ''}
       <button class="pill-btn" onclick="reassignRide(${r.id})">Reassign to a different driver</button>
     </div>`),
@@ -601,7 +604,7 @@ function driversTab() {
         if (isLive(p)) return '<span class="badge on">Online</span>';
         // Flagged online but silent: the app was killed rather than switched off.
         return `<span class="badge off" title="Marked online, but their app has not reported a position recently">No signal · ${agoLabel(minutesSinceFix(p))}</span>`;
-      })()}</td>
+      })()}${p.auto_accept ? ' <span class="badge on" title="This captain has auto-accept on — a plain nearby request goes straight to them, no dispatcher needed">Auto-accept</span>' : ''}</td>
       <td data-label="Rating">${d.rating} ${icon('star', 11)}</td>
       <td data-label="Performance"><small>${p.acceptance_rate ?? 100}% accepted<br>${p.cancellation_rate ?? 0}% cancelled</small></td>
       <td data-label="Strikes">${p.strikes ?? 0}</td>
@@ -1098,7 +1101,7 @@ function reportsTab() {
     </div>
     <table class="data-table"><thead><tr><th>Route</th><th>Category</th><th>Fare</th><th>Status</th><th>Date</th></tr></thead><tbody>
       ${rides.map((r) => `<tr>
-        <td data-label="Route">${r.pickup_address} → ${r.drop_address}</td>
+        <td data-label="Route">${r.pickup_address} → ${r.drop_address}${r.category === 'groceries' && r.notes ? `<br><small class="muted">${icon('cart', 10)} ${escapeHtml(r.notes)}</small>` : ''}</td>
         <td data-label="Category">${r.category}</td>
         <td data-label="Fare">PKR ${r.final_fare || r.calculated_fare}</td>
         <td data-label="Status"><span class="badge ${['completed', 'rated'].includes(r.status) ? 'on' : 'off'}">${r.status}</span></td>
